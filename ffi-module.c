@@ -1049,5 +1049,10 @@ emacs_module_init (struct emacs_runtime *runtime)
 	return -1;
     }
 
+  /* provide 'ffi-module feature */
+  emacs_value Qffi_module = env->intern (env, "ffi-module");
+  emacs_value Qprovide = env->intern (env, "provide");
+  env->funcall (env, Qprovide, 1, &Qffi_module);
+
   return 0;
 }

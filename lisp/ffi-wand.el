@@ -684,37 +684,15 @@ fetch data from."
 ;;{{{  `-- Image modification functions
 
 (defvar MagickFilterType :int)
-(defvar MagickFilterPoint 1)
-(defvar MagickFilterBox 2)
-(defvar MagickFilterTriangle 3)
-(defvar MagickFilterHermite 4)
-(defvar MagickFilterHanning 5)
-(defvar MagickFilterHamming 6)
-(defvar MagickFilterBlackman 7)
-(defvar MagickFilterGaussian 8)
-(defvar MagickFilterQuadratic 9)
-(defvar MagickFilterCubic 10)
-(defvar MagickFilterCatrom 11)
-(defvar MagickFilterMitchell 12)
-(defvar MagickFilterJinc 13)
-(defvar MagickFilterSinc 14)
-(defvar MagickFilterSincFast 15)
-(defvar MagickFilterKaiser 16)
-(defvar MagickFilterWelsh 17)
-(defvar MagickFilterParzen 18)
-(defvar MagickFilterBohman 19)
-(defvar MagickFilterBartlett 20)
-(defvar MagickFilterLagrange 21)
-(defvar MagickFilterLanczos 22)
-(defvar MagickFilterLanczosSharp 23)
-(defvar MagickFilterLanczos2 24)
-(defvar MagickFilterLanczos2Sharp 25)
-(defvar MagickFilterRobidoux 26)
-(defvar MagickFilterRobidouxSharp 27)
-(defvar MagickFilterCosine 28)
-(defvar MagickFilterSpline 29)
-(defvar MagickFilterLanczosRadius 30)
-(defvar MagickFilterSentinel 31)
+(defvar MagickFilterTypes
+  '(("point" . 1) ("box" . 2) ("triangle" . 3) ("hermite" . 4)
+    ("hanning" . 5) ("hamming" . 6) ("blackman" . 7) ("gaussian" . 8)
+    ("quadratic" . 9) ("cubic" . 10) ("catrom" . 11) ("mitchell" . 12)
+    ("jinc" . 13) ("sinc" . 14) ("sincfast" . 15) ("kaiser" . 16)
+    ("welsh" . 17) ("parzen" . 18) ("bohman" . 19) ("bartlett" . 20)
+    ("lagrange" . 21) ("lanczos" . 22) ("lanczossharp" . 23) ("lanczos2" . 24)
+    ("lanczos2sharp" . 25) ("robidoux" . 26) ("robidouxsharp" . 27)
+    ("cosine" . 28) ("spline" . 29) ("lanczosradius" . 30) ("sentinel" . 31)))
 
 (defvar WandCompositeOperator :int)
 (defconst WandCompositeOperators
@@ -785,6 +763,10 @@ fetch data from."
 (define-ffi-function Wand:flop-image "MagickFlopImage" MagickBooleanType
   (MagickWand) libmagickwand)
 
+;; Swirl the image associated with WAND by DEGREES.
+(define-ffi-function Wand:swirl-image "MagickSwirlImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
+
 (define-ffi-function Wand:MagickPosterizeImage "MagickPosterizeImage"
   MagickBooleanType
   (MagickWand :ulong MagickBooleanType) libmagickwand)
@@ -794,6 +776,21 @@ that is quantise the range of used colours to at most LEVELS.
 If optional argument DITHERP is non-nil use a dithering
 effect to wipe hard contrasts."
   (Wand:MagickPosterizeImage wand levels (if ditherp 1 0)))
+
+;; Tweak the image associated with WAND.
+(define-ffi-function Wand:MagickModulateImage "MagickModulateImage"
+  MagickBooleanType
+  ;; wand brightness saturation hue
+  (MagickWand :double :double :double) libmagickwand)
+
+(cl-defun Wand:modulate-image (wand &key (brightness 100.0)
+                                    (saturation 100.0)
+                                    (hue 100.0))
+  (Wand:MagickModulateImage wand brightness saturation hue))
+
+;; Solarise the image associated with WAND.
+(define-ffi-function Wand:solarize-image "MagickSolarizeImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
 
 ;; Perform gamma correction on the image associated with WAND.
 ;; The argument LEVEL is a positive float, a value of 1.00 (read 100%)
@@ -813,6 +810,40 @@ effect to wipe hard contrasts."
 (define-ffi-function Wand:spread-image "MagickSpreadImage" MagickBooleanType
   (MagickWand :double) libmagickwand)
 
+;; Blur the image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+;; The SIGMA argument is a float and defines a derivation.
+(define-ffi-function Wand:gaussian-blur-image "MagickGaussianBlurImage"
+  MagickBooleanType
+  (MagickWand :double :double) libmagickwand)
+
+;; Blur the image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+;; The SIGMA argument is a float and defines a derivation.
+;; The ANGLE argument is a float and measured in degrees.
+(define-ffi-function Wand:motion-blur-image "MagickMotionBlurImage"
+  MagickBooleanType
+  ;; wand radius sigma angle
+  (MagickWand :double :double :double) libmagickwand)
+
+;; Blur the image associated with WAND.
+;; The ANGLE argument is a float and measured in degrees.
+(define-ffi-function Wand:radial-blur-image "MagickRadialBlurImage"
+  MagickBooleanType
+  (MagickWand :double) libmagickwand)
+
+;; Sharpen the image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+;; The SIGMA argument is a float and defines a derivation.
+(define-ffi-function Wand:sharpen-image "MagickSharpenImage" MagickBooleanType
+  (MagickWand :double :double) libmagickwand)
+
+;; Simulates an image shadow
+(define-ffi-function Wand:shadow-image "MagickShadowImage"
+  MagickBooleanType
+  ;; wand opacity(%) sigma x-offset y-offset
+  (MagickWand :double :double :long :long) libmagickwand)
+
 ;; MagickTrimImage() remove edges that are the background color from
 ;; the image.
 (define-ffi-function Wand:trim-image "MagickTrimImage" MagickBooleanType
@@ -820,6 +851,12 @@ effect to wipe hard contrasts."
 
 (define-ffi-function Wand:preview-images "MagickPreviewImages" MagickWand
   (MagickWand MagickPreviewType) libmagickwand)
+
+(define-ffi-function Wand:MagickNegateImage "MagickNegateImage" MagickBooleanType
+  (MagickWand MagickBooleanType) libmagickwand)
+(defun Wand:negate-image (wand &optional greyp)
+  "Perform negation on the image associated with WAND."
+  (Wand:MagickNegateImage wand (if greyp 1 0)))
 
 ;; Crop to the rectangle spanned at X and Y by width DX and
 ;; height DY in the image associated with WAND."
@@ -855,6 +892,59 @@ effect to wipe hard contrasts."
 (define-ffi-function Wand:MagickSigmoidalContrastImage "MagickSigmoidalContrastImage"
   MagickBooleanType
   (MagickWand MagickBooleanType :double :double) libmagickwand)
+
+;; Reduce the speckle noise in the image associated with WAND.
+(define-ffi-function Wand:despeckle-image "MagickDespeckleImage" MagickBooleanType
+  (MagickWand) libmagickwand)
+
+;; Enhance the image associated with WAND.
+(define-ffi-function Wand:enhance-image "MagickEnhanceImage" MagickBooleanType
+  (MagickWand) libmagickwand)
+
+;; Equalise the image associated with WAND.
+(define-ffi-function Wand:equalize-image "MagickEqualizeImage" MagickBooleanType
+  (MagickWand) libmagickwand)
+
+;; Normalise the image associated with WAND.
+(define-ffi-function Wand:normalize-image "MagickNormalizeImage" MagickBooleanType
+  (MagickWand) libmagickwand)
+
+;; Simulate a charcoal drawing of the image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+;; The SIGMA argument is a float and defines a derivation.
+(define-ffi-function Wand:charcoal-image "MagickCharcoalImage" MagickBooleanType
+  (MagickWand :double :double) libmagickwand)
+
+;; Simulate oil-painting of image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+(define-ffi-function Wand:oil-paint-image "MagickOilPaintImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
+
+;; MagickSepiaToneImage() applies a special effect to the image,
+;; similar to the effect achieved in a photo darkroom by sepia
+;; toning. Threshold ranges from 0 to QuantumRange and is a measure of
+;; the extent of the sepia toning. A threshold of 80 is a good
+;; starting point for a reasonable tone.
+(define-ffi-function Wand:sepia-tone-image "MagickSepiaToneImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
+
+;; MagickImplodeImage() creates a new image that is a copy of an
+;; existing one with the image pixels "implode" by the specified
+;; percentage. It allocates the memory necessary for the new Image
+;; structure and returns a pointer to the new image.
+(define-ffi-function Wand:implode-image "MagickImplodeImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
+
+;; MagickVignetteImage() softens the edges of the image in vignette
+;; style.
+(define-ffi-function Wand:vignette-image "MagickVignetteImage" MagickBooleanType
+  ;; wand black-point white-point x y
+  (MagickWand :double :double :double :double) libmagickwand)
+
+;; Enhance the edges of the image associated with WAND.
+;; The RADIUS argument is a float and measured in pixels.
+(define-ffi-function Wand:edge-image "MagickEdgeImage" MagickBooleanType
+  (MagickWand :double) libmagickwand)
 
 ;; Emboss the image associated with WAND (a relief effect).
 ;; The RADIUS argument is a float and measured in pixels.
@@ -946,7 +1036,8 @@ Return non-nil if fiting was performed."
   :group 'wand)
 
 (defcustom wand-sigma 2.0
-  "*Sigma for operations such as gaussian-blur, sharpen, etc."
+  "*Sigma for operations such as gaussian-blur, sharpen, etc.
+The standard deviation of the Gaussian, in pixels"
   :type 'float
   :group 'wand)
 
@@ -1229,49 +1320,59 @@ ARGS specifies arguments to operation, first must always be wand."
   (wand--possible-for-region wand
     (Wand:flop-image wand)))
 
-(define-Wand-operation normalize (wand)
+(define-wand-operation normalize (wand)
   "Normalise image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:normalize-image wand)))
 
-(define-Wand-operation despeckle (wand)
+(define-wand-operation despeckle (wand)
   "Despeckle image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:despeckle-image wand)))
 
-(define-Wand-operation enhance (wand)
+(define-wand-operation enhance (wand)
   "Enhance image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:enhance-image wand)))
 
-(define-Wand-operation equalize (wand)
+(define-wand-operation equalize (wand)
   "Equalise image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:equalize-image wand)))
 
-(define-Wand-operation gauss-blur (wand radius sigma)
+(define-wand-operation gauss-blur (wand radius sigma)
   "Gauss blur image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:gaussian-blur-image wand (float radius) (float sigma))))
 
-(define-Wand-operation sharpen (wand radius sigma)
-  "Sharpenize image."
-  (Wand-possible-for-region wand
-    (Wand:sharpen-image wand (float radius) (float sigma))))
-
-(define-Wand-operation radial-blur (wand angle)
+(define-wand-operation radial-blur (wand angle)
   "Radial blur."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:radial-blur-image wand (float angle))))
 
-(define-Wand-operation negate (wand greyp)
+(define-wand-operation motion-blur (wand radius sigma angle)
+  "Motion blur."
+  (wand--possible-for-region wand
+    (Wand:motion-blur-image wand (float radius) (float sigma) (float angle))))
+
+(define-wand-operation sharpen (wand radius sigma)
+  "Sharpenize image."
+  (wand--possible-for-region wand
+    (Wand:sharpen-image wand (float radius) (float sigma))))
+
+(define-wand-operation shadow (wand opacity sigma x y)
+  "Emulate shadow in image."
+  (wand--possible-for-region wand
+    (Wand:shadow-image wand (float opacity) (float sigma) x y)))
+
+(define-wand-operation negate (wand greyp)
   "Negate image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:negate-image wand greyp)))
 
-(define-Wand-operation modulate (wand mtype minc)
+(define-wand-operation modulate (wand mtype minc)
   "Modulate the image WAND using MTYPE by MINC."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:modulate-image wand mtype (float (+ 100 minc)))))
 
 (define-Wand-operation grayscale (wand)
@@ -1279,34 +1380,34 @@ ARGS specifies arguments to operation, first must always be wand."
   (Wand-possible-for-region wand
     (Wand:SetImageColorspace wand :GRAYColorspace)))
 
-(define-Wand-operation solarize (wand threshold)
+(define-wand-operation solarize (wand threshold)
   "Solarise image by THRESHOLD."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:solarize-image wand (float threshold))))
 
-(define-Wand-operation swirl (wand degrees)
+(define-wand-operation swirl (wand degrees)
   "Swirl image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:swirl-image wand (float degrees))))
 
-(define-Wand-operation oil (wand radius)
+(define-wand-operation oil (wand radius)
   "Simulate oil-painting of image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:oil-paint-image wand (float radius))))
 
-(define-Wand-operation charcoal (wand radius sigma)
+(define-wand-operation charcoal (wand radius sigma)
   "Simulate charcoal painting of image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:charcoal-image wand (float radius) (float sigma))))
 
-(define-Wand-operation sepia-tone (wand threshold)
+(define-wand-operation sepia-tone (wand threshold)
   "Apply sepia tone to image by THRESHOLD."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:sepia-tone-image wand (float threshold))))
 
-(define-Wand-operation implode (wand radius)
+(define-wand-operation implode (wand radius)
   "Implude image by RADIUS."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:implode-image wand (float radius))))
 
 (define-Wand-operation wave (wand amplitude wave-length)
@@ -1314,14 +1415,14 @@ ARGS specifies arguments to operation, first must always be wand."
   (Wand-possible-for-region wand
     (Wand:wave-image wand (float amplitude) (float wave-length))))
 
-(define-Wand-operation vignette (wand white black x y)
+(define-wand-operation vignette (wand white black x y)
   "Vignette from image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:vignette-image wand (float white) (float black) (float x) (float y))))
 
-(define-Wand-operation edge (wand radius)
+(define-wand-operation edge (wand radius)
   "Enhance the edges of the image."
-  (Wand-possible-for-region wand
+  (wand--possible-for-region wand
     (Wand:edge-image wand (float radius))))
 
 (define-wand-operation emboss (wand radius sigma)
@@ -1392,10 +1493,11 @@ MIDPOINT - midpoint of the function as a color value 0 to QuantumRange"
 (defmacro wand-make-scaler (filter-type blur)
   "Create resize function, suitable with `Wand:fit-resize'.
 FILTER-TYPE and BLUR specifies smothing applied after resize.
-FILTER-TYPE is one of `MagickFilterXXX'
+FILTER-TYPE is one of `MagickFilterTypes'
 BLUR is float, 0.25 for insane pixels, > 2.0 for excessively smoth."
   `(lambda (iw x y)
-     (Wand:resize-image iw x y ,filter-type (float ,blur))))
+     (Wand:resize-image iw x y ,(cdr (assoc filter-type MagickFilterTypes))
+                        (float ,blur))))
 
 (define-wand-operation fit-size (wand width height)
   (Wand:fit-size wand width height wand-scaler t))
@@ -2039,53 +2141,73 @@ If ARG is specified then rotate on ARG degree."
 
 ;;{{{ Effect operations
 
-(defun Wand-mode-radial-blur (arg)
+(defun wand-radial-blur (arg)
   "Blur the image radially by ARG degree."
-  (interactive (list (read-number "Blur radius [2.0]: " nil "2.0")))
-  (Wand-operation-apply 'radial-blur image-wand arg)
-  (Wand-redisplay))
-(put 'Wand-mode-radial-blur 'effect-operation t)
-(put 'Wand-mode-radial-blur 'menu-name "Radial Blur")
+  (interactive (list (read-number "Blur radius: " 2.0)))
+  (wand--operation-apply 'radial-blur image-wand arg)
+  (wand--redisplay))
+(put 'wand-radial-blur 'effect-operation t)
+(put 'wand-radial-blur 'menu-name "Radial Blur")
 
-(defun Wand-mode-sharpen (radius sigma)
-  "Sharpen image with by RADIUS and SIGMA."
-  (interactive (list (read-number "Radius [1]: " nil "1")
-                     (read-number (format "Sigma [%d]: " Wand-mode-sigma)
-                                  nil (number-to-string Wand-mode-sigma))))
-  (Wand-operation-apply 'sharpen image-wand radius sigma)
-  (Wand-redisplay))
-(put 'Wand-mode-sharpen 'can-preview :SharpenPreview)
-(put 'Wand-mode-sharpen 'effect-operation t)
-(put 'Wand-mode-sharpen 'menu-name "Sharpen")
+(defun wand-motion-blur (radius sigma angle)
+  "Apply motion blur the image using RADIUS, SIGMA and ANGLE."
+  (interactive (list (read-number "Radius: " 1)
+                     (read-number "Sigma: " wand-sigma)
+                     (read-number "Angle: " 2)))
+  (wand--operation-apply 'motion-blur image-wand radius sigma angle)
+  (wand--redisplay))
+(put 'wand-motion-blur 'effect-operation t)
+(put 'wand-motion-blur 'menu-name "Motion Blur")
 
-(defun Wand-mode-gaussian-blur (radius sigma)
+(defun wand-gaussian-blur (radius sigma)
   "Apply gaussian blur of RADIUS and SIGMA to the image."
-  (interactive (list (read-number "Radius [1]: " nil "1")
-                     (read-number (format "Sigma [%d]: " Wand-mode-sigma)
-                                  nil (number-to-string Wand-mode-sigma))))
-  (Wand-operation-apply 'gauss-blur image-wand radius sigma)
-  (Wand-redisplay))
-(put 'Wand-mode-gaussian-blur 'can-preview :BlurPreview)
-(put 'Wand-mode-gaussian-blur 'effect-operation t)
-(put 'Wand-mode-gaussian-blur 'menu-name "Gaussian Blur")
+  (interactive (list (read-number "Radius: " 1)
+                     (read-number "Sigma: " wand-sigma)))
+  (wand--operation-apply 'gauss-blur image-wand radius sigma)
+  (wand--redisplay))
+(put 'wand-gaussian-blur 'can-preview "blur")
+(put 'wand-gaussian-blur 'effect-operation t)
+(put 'wand-gaussian-blur 'menu-name "Gaussian Blur")
 
-(defun Wand-mode-despeckle ()
+(defun wand-shadow (opacity sigma x-off y-off)
+  "Sharpen image with by RADIUS and SIGMA."
+  (interactive (list (read-number "Opacity in %: " 50)
+                     (read-number "Sigma: " wand-sigma)
+                     (read-number "Shadow x-offset: " 4)
+                     (read-number "Shadow y-offset: " 4)))
+  (wand--operation-apply 'shadow image-wand opacity sigma x-off y-off)
+  (wand--redisplay))
+(put 'wand-shadow 'effect-operation t)
+(put 'wand-shadow 'menu-name "shadow")
+
+(defun wand-sharpen (radius sigma)
+  "Sharpen image with by RADIUS and SIGMA."
+  (interactive (list (read-number "Radius: " 1)
+                     (read-number "Sigma: " wand-sigma)))
+  (wand--operation-apply 'sharpen image-wand radius sigma)
+  (wand--redisplay))
+(put 'wand-sharpen 'can-preview "sharpen")
+(put 'wand-sharpen 'effect-operation t)
+(put 'wand-sharpen 'menu-name "Sharpen")
+
+(defun wand-despeckle ()
   "Despeckle image."
   (interactive)
-  (Wand-operation-apply 'despeckle image-wand)
-  (Wand-redisplay))
-(put 'Wand-mode-despeckle 'can-preview :DespecklePreview)
-(put 'Wand-mode-despeckle 'effect-operation t)
-(put 'Wand-mode-despeckle 'menu-name "Despeckle")
+  (wand--operation-apply 'despeckle image-wand)
+  (wand--redisplay))
+(put 'wand-despeckle 'can-preview "despeckle")
+(put 'wand-despeckle 'effect-operation t)
+(put 'wand-despeckle 'menu-name "Despeckle")
 
-(defun Wand-mode-edge (radius)
+(defun wand-edge (radius)
   "Enhance edges of the image by RADIUS.
 Default is 1."
-  (interactive (list (read-number "Radius [1.0]: " nil "1.0")))
-  (Wand-operation-apply 'edge image-wand radius)
-  (Wand-redisplay))
-(put 'Wand-mode-edge 'effect-operation t)
-(put 'Wand-mode-edge 'menu-name "Edge Detect")
+  (interactive (list (read-number "Radius: " 1)))
+  (wand--operation-apply 'edge image-wand radius)
+  (wand--redisplay))
+(put 'wand-edge 'can-preview "edgedetect")
+(put 'wand-edge 'effect-operation t)
+(put 'wand-edge 'menu-name "Edge Detect")
 
 (defun wand-emboss (radius sigma)
   "Emboss the image with RADIUS and SIGMA."
@@ -2157,62 +2279,61 @@ By default increase."
 (put 'wand-sigmoidal-contrast 'enhance-operation t)
 (put 'wand-sigmoidal-contrast 'menu-name "Sigmoidal Contrast")
 
-(defun Wand-mode-normalize ()
+(defun wand-normalize ()
   "Normalize image."
   (interactive)
-  (Wand-operation-apply 'normalize image-wand)
-  (Wand-redisplay))
-(put 'Wand-mode-normalize 'enhance-operation t)
-(put 'Wand-mode-normalize 'menu-name "Normalize")
+  (wand--operation-apply 'normalize image-wand)
+  (wand--redisplay))
+(put 'wand-normalize 'enhance-operation t)
+(put 'wand-normalize 'menu-name "Normalize")
 
-(defun Wand-mode-enhance ()
+(defun wand-enhance ()
   "Enhance image."
   (interactive)
-  (Wand-operation-apply 'enhance image-wand)
-  (Wand-redisplay))
-(put 'Wand-mode-enhance 'enhance-operation t)
-(put 'Wand-mode-enhance 'menu-name "Enhance")
+  (wand--operation-apply 'enhance image-wand)
+  (wand--redisplay))
+(put 'wand-enhance 'enhance-operation t)
+(put 'wand-enhance 'menu-name "Enhance")
 
-(defun Wand-mode-equalize ()
+(defun wand-equalize ()
   "Equalise image."
   (interactive)
-  (Wand-operation-apply 'equalize image-wand)
-  (Wand-redisplay))
-(put 'Wand-mode-equalize 'enhance-operation t)
-(put 'Wand-mode-equalize 'menu-name "Equalize")
+  (wand--operation-apply 'equalize image-wand)
+  (wand--redisplay))
+(put 'wand-equalize 'enhance-operation t)
+(put 'wand-equalize 'menu-name "Equalize")
 
-(defun Wand-mode-negate (arg)
+(defun wand-negate (arg)
   "Negate image.
 If prefix ARG is specified then negate by grey."
   (interactive "P")
-  (Wand-operation-apply 'negate image-wand arg)
-  (Wand-redisplay))
-(put 'Wand-mode-negate 'enhance-operation t)
-(put 'Wand-mode-negate 'menu-name "Negate")
+  (wand--operation-apply 'negate image-wand arg)
+  (wand--redisplay))
+(put 'wand-negate 'enhance-operation t)
+(put 'wand-negate 'menu-name "Negate")
 
-(defun Wand-mode-grayscale ()
+(defun wand-grayscale ()
   "Convert image to grayscale colorspace."
   (interactive)
-  (Wand-operation-apply 'grayscale image-wand)
-  (Wand-redisplay))
-(put 'Wand-mode-grayscale 'enhance-operation t)
-(put 'Wand-mode-grayscale 'menu-name "Grayscale")
+  (wand--operation-apply 'grayscale image-wand)
+  (wand--redisplay))
+(put 'wand-grayscale 'enhance-operation t)
+(put 'wand-grayscale 'menu-name "Grayscale")
 
-(defun Wand-mode-modulate (type inc)
+(defun wand-modulate (type inc)
   "Modulate image's brightness, saturation or hue."
   (interactive (let* ((tp (completing-read
                            "Modulate [saturation]: "
                            '(("brightness") ("saturation") ("hue"))
                            nil t nil nil "saturation"))
-                      (tinc (read-number (format "Increase %s [25%%]: " tp)
-                                         nil "25")))
+                      (tinc (read-number (format "Increase %s in %%: " tp) 25)))
                  (list (cond ((string= tp "brightness") :brightness)
                              ((string= tp "hue") :hue)
                              (t :saturation)) tinc)))
-  (Wand-operation-apply 'modulate image-wand type inc)
-  (Wand-redisplay))
-(put 'Wand-mode-modulate 'enhance-operation t)
-(put 'Wand-mode-modulate 'menu-name "Modulate")
+  (wand--operation-apply 'modulate image-wand type inc)
+  (wand--redisplay))
+(put 'wand-modulate 'enhance-operation t)
+(put 'wand-modulate 'menu-name "Modulate")
 
 ;;}}}
 
@@ -2226,70 +2347,71 @@ If prefix ARG is specified then negate by grey."
 (put 'wand-preview-op 'f/x-operation t)
 (put 'wand-preview-op 'menu-name "Preview operation")
 
-(defun Wand-mode-solarize (sf)
+(defun wand-solarize (sf)
   "Solarise image with solarize factor SF."
-  (interactive (list (read-number "Solarize factor [50%]: " nil "50")))
-  (Wand-operation-apply 'solarize image-wand
-			(* (Wand:quantum-range) (/ sf 100.0)))
-  (Wand-redisplay))
-(put 'Wand-mode-solarize 'f/x-operation t)
-(put 'Wand-mode-solarize 'menu-name "Solarize")
+  (interactive (list (read-number "Solarize in %: " 50)))
+  (wand--operation-apply 'solarize image-wand
+                         (* (Wand:quantum-range) (/ sf 100.0)))
+  (wand--redisplay))
+(put 'wand-solarize 'can-preview "solarize")
+(put 'wand-solarize 'f/x-operation t)
+(put 'wand-solarize 'menu-name "Solarize")
 
-(defun Wand-mode-swirl (degrees)
+(defun wand-swirl (degrees)
   "Swirl the image by DEGREES."
-  (interactive (list (read-number "Degrees [90]: " nil "90")))
-  (Wand-operation-apply 'swirl image-wand degrees)
-  (Wand-redisplay))
-(put 'Wand-mode-swirl 'f/x-operation t)
-(put 'Wand-mode-swirl 'menu-name "Swirl")
+  (interactive (list (read-number "Degrees: " 90)))
+  (wand--operation-apply 'swirl image-wand degrees)
+  (wand--redisplay))
+(put 'wand-swirl 'f/x-operation t)
+(put 'wand-swirl 'menu-name "Swirl")
 
-(defun Wand-mode-oil-paint (radius)
+(defun wand-oil-paint (radius)
   "Simulate oil painting with RADIUS for the image.
 Default radius is 3."
-  (interactive (list (read-number "Radius [3.0]: " nil "3.0")))
-  (Wand-operation-apply 'oil image-wand radius)
-  (Wand-redisplay))
-(put 'Wand-mode-oil-paint 'can-preview :OilPaintPreview)
-(put 'Wand-mode-oil-paint 'f/x-operation t)
-(put 'Wand-mode-oil-paint 'menu-name "Oil Paint")
+  (interactive (list (read-number "Radius: " 2.5)))
+  (wand--operation-apply 'oil image-wand radius)
+  (wand--redisplay))
+(put 'wand-oil-paint 'can-preview "oilpaint")
+(put 'wand-oil-paint 'f/x-operation t)
+(put 'wand-oil-paint 'menu-name "Oil Paint")
 
-(defun Wand-mode-charcoal (radius sigma)
+(defun wand-charcoal (radius sigma)
   "Simulate charcoal painting for the image.
 If prefix ARG is specified then radius for charcoal painting is ARG.
 Default is 1."
-  (interactive (list (read-number "Radius [1.0]: " nil "1.0")
-		     (read-number "Sigma [1.0]: " nil "1.0")))
-  (Wand-operation-apply 'charcoal image-wand radius sigma)
-  (Wand-redisplay))
-(put 'Wand-mode-charcoal 'can-preview :CharcoalDrawingPreview)
-(put 'Wand-mode-charcoal 'f/x-operation t)
-(put 'Wand-mode-charcoal 'menu-name "Charcoal Draw")
+  (interactive (list (read-number "Radius: " 1.0)
+		     (read-number "Sigma: " wand-sigma)))
+  (wand--operation-apply 'charcoal image-wand radius sigma)
+  (wand--redisplay))
+(put 'wand-charcoal 'can-preview "charcoal-drawing")
+(put 'wand-charcoal 'f/x-operation t)
+(put 'wand-charcoal 'menu-name "Charcoal Draw")
 
-(defun Wand-mode-sepia-tone (threshold)
+(defun wand-sepia-tone (threshold)
   "Apply sepia tone to image by THRESHOLD."
-  (interactive (list (read-number "Threshold [80%]: " nil "80")))
-  (Wand-operation-apply 'sepia-tone image-wand
-			(* (Wand:quantum-range) (/ threshold 100.0)))
-  (Wand-redisplay))
-(put 'Wand-mode-sepia-tone 'f/x-operation t)
-(put 'Wand-mode-sepia-tone 'menu-name "Sepia Tone")
+  (interactive (list (read-number "Threshold in %: " 80)))
+  (wand--operation-apply 'sepia-tone image-wand
+                         (* (Wand:quantum-range) (/ threshold 100.0)))
+  (wand--redisplay))
+(put 'wand-sepia-tone 'f/x-operation t)
+(put 'wand-sepia-tone 'menu-name "Sepia Tone")
 
-(defun Wand-mode-implode (radius)
+(defun wand-implode (radius)
   "Implode image by RADIUS.
 RADIUS range is [-1.0, 1.0]."
-  (interactive (list (read-number "Radius [0.3]: " nil "0.3")))
-  (Wand-operation-apply 'implode image-wand radius)
-  (Wand-redisplay))
-(put 'Wand-mode-implode 'f/x-operation t)
-(put 'Wand-mode-implode 'menu-name "Implode")
+  (interactive (list (read-number "Radius: " 0.3)))
+  (wand--operation-apply 'implode image-wand radius)
+  (wand--redisplay))
+(put 'wand-implode 'f/x-operation t)
+(put 'wand-implode 'menu-name "Implode")
 
-(defun Wand-mode-vignette (bw)
+(defun wand-vignette (bw)
   "Create vignette using image."
-  (interactive (list (read-number "Black/White [10]: " nil "10")))
-  (Wand-operation-apply 'vignette image-wand bw bw 0 0)
-  (Wand-redisplay))
-(put 'Wand-mode-vignette 'f/x-operation t)
-(put 'Wand-mode-vignette 'menu-name "Vignette")
+  (interactive (list (read-number "Black/White: " 10)))
+  (wand--operation-apply 'vignette image-wand bw bw 0 0)
+  (wand--redisplay))
+(put 'wand-vignette 'f/x-operation t)
+(put 'wand-vignette 'menu-name "Vignette")
 
 (defun Wand-mode-wave (amplitude wave-length)
   "Create wave effect on image with AMPLITUDE and WAVE-LENGTH."

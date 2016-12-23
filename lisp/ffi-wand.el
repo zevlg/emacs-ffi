@@ -48,6 +48,46 @@
   (debug :type MagickBooleanType)
   (signature :type :ulong))
 
+(defconst MagickStatusType :uint)
+(define-ffi-struct MagickInfo
+  (name :type :pointer)
+  (description :type :pointer)
+  (version :type :pointer)
+  (note :type :pointer)
+  (module :type :pointer)
+
+  (image-info :type :pointer)
+  (decoder :type :pointer)
+  (encoder :type :pointer)
+
+  (magick :type :pointer)                      ; IsImageFormatHandler
+  (client-date :type :pointer)
+
+  (adjoin :type MagickBooleanType)
+  (raw :type MagickBooleanType)
+  (endian-support :type MagickBooleanType)
+  (blob-support :type MagickBooleanType)
+  (seekable-stream :type MagickBooleanType)
+  (thread-support :type MagickStatusType)
+  (stealth :type MagickBooleanType)
+
+  ;; deprecated, use GetMagickInfoList()
+  (previous :type :pointer)
+  (next :type :pointer)
+
+  (signature :type :ulong))
+
+(defconst MagickExceptionType :int)
+(define-ffi-struct MagickExceptionInfo
+  (severity :type MagickExceptionType)
+  (error_number :type :int)
+  (reason :type :pointer)
+  (description :type :pointer)
+  (exceptions :type :pointer)
+  (relinquish :type MagickBooleanType)
+  (semaphore :type :pointer)
+  (signature :type :ulong))
+
 (define-ffi-struct PointInfo
   (x :type :double)
   (y :type :double))
@@ -88,10 +128,7 @@
 (define-ffi-function Wand:RelinquishMemory "MagickRelinquishMemory" :pointer
   (:pointer) libmagickwand)
 
-(defvar MagickWand :pointer)
-
-(defvar wand--free-pool nil
-  "Pool of ready to use imagemagick wands")
+(defconst MagickWand :pointer)
 
 (define-ffi-function Wand:acquire-id "AcquireWandId" :size_t
   nil libmagickwand)
@@ -116,6 +153,11 @@
 ;; Gets the image at the current image index.
 (define-ffi-function Wand:get-image "MagickGetImage" MagickWand
   (MagickWand) libmagickwand)
+
+;; Extracts a region of the image and returns it as a a new wand.
+(define-ffi-function Wand:image-region "MagickGetImageRegion" MagickWand
+  ;; wand dx dy x y
+  (MagickWand :ulong :ulong :ulong :ulong) libmagickwand)
 
 ;; Delete the WAND.
 ;; This frees all resources associated with the WAND.
@@ -156,11 +198,22 @@
           (ffi-get-c-string ii)
         (Wand:RelinquishMemory ii)))))
 
+(define-ffi-function Wand:MagickGetException "MagickGetException" :pointer
+  (MagickWand :pointer) libmagickwand)
+
+(defun Wand:exception (wand)
+  "Return reason of any error that occurs when using API."
+  (with-ffi-temporary (c-ext MagickExceptionType)
+    (ffi-get-c-string (Wand:MagickGetException wand c-ext))))
+
+;;}}}
+
 (define-ffi-function Wand:MagickReadImage "MagickReadImage" MagickBooleanType
   (MagickWand :pointer) libmagickwand)
 
 (defun Wand:read-image (wand file)
-  "Read FILE and associate it with WAND."
+  "Read FILE and associate it with WAND.
+Return non-nil if file has been loaded successfully."
   (let ((fname (expand-file-name file)))
     ;; simple error catchers
     (unless (file-readable-p fname)
@@ -169,7 +222,10 @@
       (wrong-type-argument 'Wand:wandp wand))
 
     (with-ffi-string (fncstr fname)
-      (Wand:MagickReadImage wand fncstr))))
+      (when (zerop (Wand:MagickReadImage wand fncstr))
+        (error "Can't read file %s: %s"
+               file (Wand:exception image-wand))))
+    t))
 
 (defun Wand:read-image-data (wand data)
   (with-ffi-string (dtcstr data)
@@ -455,7 +511,7 @@ Use \(setf \(Wand:image-orientation w\) orient\) to set new one."
 (defsetf Wand:image-orientation (w) (orient)
   `(Wand:SetImageOrientation ,w ,orient))
 
-(defvar MagickEndianType :int)
+(defconst MagickEndianType :int)
 (defconst MagickEndianUndefined 0)
 (defconst MagickEndianLSB 1)
 (defconst MagickEndianMSB 2)
@@ -475,6 +531,18 @@ Use \(setf \(Wand:image-endian w\) endian\) to set new one."
 
 (defsetf Wand:image-endian (w) (endian)
   `(Wand:SetImageEndian ,w ,endian))
+
+(defconst MagickColorspaceType :int)
+(defconst MagickColorspaceTypes
+  '(("RGB" . 1) ("GRAY" . 2) ("Transparent" . 3) ("OHTA" . 4) ("Lab" . 5)
+    ("XYZ" . 6) ("YCbCr" . 7) ("YCC" . 8) ("YIQ" . 9) ("YPbPr" . 10)
+    ("YUV" . 11) ("CMYK" . 12) ("sRGB" . 13) ("HSB" . 14) ("HSL" . 15)
+    ("HWB" . 16) ("Rec601Luma" . 17) ("Rec601YCbCr" . 18) ("Rec709Luma" . 19)
+    ("Rec709YCbCr" . 20) ("Log" . 21) ("CMY" . 22)))
+
+(define-ffi-function Wand:SetImageColorspace "MagickTransformImageColorspace"
+  MagickBooleanType
+  (MagickWand MagickColorspaceType) libmagickwand)
 
 ;;}}}
 
@@ -512,6 +580,19 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   (let ((nfmtsym (cl-gensym)))
     `(with-ffi-string (,nfmtsym ,fmt)
        (Wand:SetImageFormat ,w ,nfmtsym))))
+
+(define-ffi-function Wand:GetMagickInfo "GetMagickInfo" :pointer
+  ;; format exception
+  (:pointer :pointer) libmagickwand)
+
+(defun Wand:get-magick-info (fmt)
+  (with-ffi-temporary (c-mexc MagickExceptionInfo)
+    (with-ffi-string (c-fmt fmt)
+      (Wand:GetMagickInfo c-fmt c-mexc))))
+
+(define-ffi-function Wand:GetMagickInfoList "GetMagickInfoList" :pointer
+  ;; fmt-pattern &num exception
+  (:pointer :pointer :pointer) libmagickwand)
 
 ;;}}}
 
@@ -636,6 +717,162 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 
 ;;}}}
 
+;;{{{  `-- DrawingWand operations
+
+(defconst DrawingWand :pointer)
+
+(defconst WandPaintMethod :int)
+(defconst WandPaintPoint 1)
+(defconst WandPaintReplace 2)
+(defconst WandPaintFloodfill 3)
+(defconst WandPaintFillToBorder 4)
+(defconst WandPaintReset 5)
+
+;; MagickDrawImage() renders the drawing wand on the current image.
+(define-ffi-function Wand:MagickDrawImage "MagickDrawImage" MagickBooleanType
+  (MagickWand DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:MagickAnnotateImage "MagickAnnotateImage"
+  MagickBooleanType
+  ;; wand draw x y angle text
+  (MagickWand DrawingWand :double :double :double :pointer) libmagickwand)
+
+(define-ffi-function Wand:clear-drawing-wand "ClearDrawingWand" :void
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:copy-drawing-wand "CloneDrawingWand" DrawingWand
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:delete-drawing-wand "DestroyDrawingWand" DrawingWand
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:make-drawing-wand "NewDrawingWand" DrawingWand
+  nil libmagickwand)
+
+(defmacro Wand-with-drawing-wand (dw &rest forms)
+  "With allocated drawing wand DW do FORMS."
+  `(let ((,dw (Wand:make-drawing-wand)))
+     (unwind-protect
+         (progn ,@forms)
+       (Wand:delete-drawing-wand ,dw))))
+(put 'Wand-with-drawing-wand 'lisp-indent-function 'defun)
+
+(define-ffi-function Wand:draw-arc "DrawArc" :void
+  ;; draw sx sy ex ey sd ed
+  (DrawingWand :double :double :double :double :double :double) libmagickwand)
+
+(define-ffi-function Wand:draw-circle "DrawCircle" :void
+  ;; draw ox oy px py
+  (DrawingWand :double :double :double :double) libmagickwand)
+
+(define-ffi-function Wand:draw-rectangle "DrawRectangle" :void
+  ;; draw ox oy ex ey
+  (DrawingWand :double :double :double :double) libmagickwand)
+
+(define-ffi-function Wand:draw-round-rectangle "DrawRoundRectangle" :void
+  ;; draw x1 y1 x2 y2 rx ry
+  (DrawingWand :double :double :double :double :double :double) libmagickwand)
+
+(define-ffi-function Wand:draw-color "DrawColor" :void
+  ;; draw x y paint-method
+  (DrawingWand :double :double WandPaintMethod) libmagickwand)
+
+(define-ffi-function Wand:DrawPolygon "DrawPolygon" :void
+  (DrawingWand :ulong PointInfo) libmagickwand)
+
+(define-ffi-function Wand:DrawPolyline "DrawPolyline" :void
+  (DrawingWand :ulong PointInfo) libmagickwand)
+
+(defmacro Wand-with-points (binding &rest body)
+  (declare (indent defun))
+  (let ((npo (cl-gensym))
+        (poi (cl-gensym))
+        (offseter (cl-gensym)))
+    `(let (,offseter)
+       (with-ffi-temporaries ((,poi PointInfo)
+                              (,(car binding)
+                               (* (length ,@(cdr binding))
+                                  (ffi--type-size PointInfo))))
+         (setq ,offseter ,(car binding))
+         (dolist (,npo ,@(cdr binding))
+           (setf (PointInfo-x ,poi) (float (car ,npo))
+                 (PointInfo-y ,poi) (float (cdr ,npo)))
+           (ffi--mem-set ,offseter PointInfo ,poi)
+           (setq ,offseter
+                 (ffi-pointer+ ,offseter (ffi--type-size PointInfo))))
+         ,@body))))
+
+(defun Wand:draw-lines (dw points)
+  (Wand-with-points (pinfo points)
+    (Wand:DrawPolyline dw (length points) pinfo)))
+
+(define-ffi-function Wand:DrawGetFillColor "DrawGetFillColor" :void
+  (DrawingWand PixelWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetFillColor "DrawSetFillColor" :void
+  (DrawingWand PixelWand) libmagickwand)
+
+(defun Wand:draw-fill-color (dw)
+  (let ((pw (Wand:NewPixelWand)))
+    (Wand:DrawGetFillColor dw pw)
+    pw))
+
+(defsetf Wand:draw-fill-color (w) (p)
+  `(Wand:DrawSetFillColor ,w ,p))
+
+(define-ffi-function Wand:draw-fill-opacity "DrawGetFillOpacity" :double
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetFillOpacity "DrawSetFillOpacity" :void
+  (DrawingWand :double) libmagickwand)
+
+(defsetf Wand:draw-fill-opacity (w) (fo)
+  `(Wand:DrawSetFillOpacity ,w ,fo))
+
+(define-ffi-function Wand:DrawGetStrokeColor "DrawGetStrokeColor" :void
+  (DrawingWand PixelWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetStrokeColor "DrawSetStrokeColor" :void
+  (DrawingWand PixelWand) libmagickwand)
+
+(defun Wand:draw-stroke-color (dw)
+  (let ((pw (Wand:NewPixelWand)))
+    (Wand:DrawGetStrokeColor dw pw)
+    pw))
+
+(defsetf Wand:draw-stroke-color (w) (p)
+  `(Wand:DrawSetStrokeColor ,w ,p))
+
+(define-ffi-function Wand:draw-stroke-width "DrawGetStrokeWidth" :double
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetStrokeWidth "DrawSetStrokeWidth" :void
+  (DrawingWand :double) libmagickwand)
+
+(defsetf Wand:draw-stroke-width (dw) (sw)
+  `(Wand:DrawSetStrokeWidth ,dw ,sw))
+
+(define-ffi-function Wand:draw-stroke-opacity "DrawGetStrokeOpacity" :double
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetStrokeOpacity "DrawSetStrokeOpacity" :void
+  (DrawingWand :double) libmagickwand)
+
+(defsetf Wand:draw-stroke-opacity (dw) (so)
+  `(Wand:DrawSetStrokeOpacity ,dw ,so))
+
+(define-ffi-function Wand:draw-stroke-antialias "DrawGetStrokeAntialias"
+  MagickBooleanType
+  (DrawingWand) libmagickwand)
+
+(define-ffi-function Wand:DrawSetStrokeAntialias "DrawSetStrokeAntialias" :void
+  (DrawingWand MagickBooleanType) libmagickwand)
+
+(defsetf Wand:draw-stroke-antialias (dw) (aa)
+  `(Wand:DrawSetStrokeAntialias ,dw (if ,aa 1 0)))
+
+;;}}}
+
 ;;{{{  `-- Image pixels operations
 
 (defvar MagickStorageType :int)
@@ -680,6 +917,29 @@ fetch data from."
   (Wand:get-image-pixels-internal
    wand 'rgb 0 0 (Wand:image-width wand) (Wand:image-height wand)))
 
+(defun Wand:pixels-extract-colors (ss &optional n)
+  "Extract colors from SS string.
+Return list of lists of N int elements representing RBG(A) values."
+  (let ((cls (cl-loop for i from 0 below (car ss)
+               collect (ffi-aref (cdr ss) :uchar i)))
+        (rls nil))
+    (while cls
+      (push (subseq cls 0 (or n 3)) rls)
+      (setq cls (nthcdr (or n 3) cls)))
+    (nreverse rls)))
+
+(defun Wand:get-image-rgb-pixels (wand x y w h)
+  "Extract RGB pixels from WAND."
+  (let ((pxd (Wand:get-image-pixels-internal
+              wand 'rgb x y w h)))
+    (unwind-protect
+        (Wand:pixels-extract-colors pxd 3)
+      (ffi-free (cdr pxd)))))
+
+(defun Wand:get-rgb-pixel-at (wand x y)
+  "Return WAND's RGB pixel at X, Y."
+  (car (Wand:get-image-rgb-pixels wand x y 1 1)))
+
 ;;}}}
 ;;{{{  `-- Image modification functions
 
@@ -709,9 +969,9 @@ fetch data from."
     ("linearlight" . 34) ("luminize" . 35) ("minus" . 36)
     ("modulate" . 37) ("multiply" . 38) ("out" . 39) ("over" . 40)
     ("overlay" . 41) ("plus" . 42) ("replace" . 43) ("saturate" . 44)
-    ("screen" . 45) ("softlight" . 46) ("srcatop" . 47) ("src" . 48)
-    ("srcin" . 49) ("srcout" . 50) ("srcover" . 51) ("subtract" . 52)
-    ("threshold" . 53) ("xor" . 54) ("divide" . 55) 
+    ("screen" . 45) ("softlight" . 46) ("src-atop" . 47) ("src" . 48)
+    ("src-in" . 49) ("src-out" . 50) ("src-over" . 51) ("subtract" . 52)
+    ("threshold" . 53) ("xor" . 54) ("divide" . 55)
     ))
 
 (defvar MagickNoiseType :int)
@@ -762,6 +1022,23 @@ fetch data from."
   (MagickWand) libmagickwand)
 (define-ffi-function Wand:flop-image "MagickFlopImage" MagickBooleanType
   (MagickWand) libmagickwand)
+
+(define-ffi-function Wand:transpose-image "MagickTransposeImage"
+  MagickBooleanType
+  (MagickWand) libmagickwand)
+(define-ffi-function Wand:transverse-image "MagickTransverseImage"
+  MagickBooleanType
+  (MagickWand) libmagickwand)
+
+;; MagickWaveImage() creates a "ripple" effect in the image by
+;; shifting the pixels vertically along a sine wave whose amplitude
+;; and wavelength is specified by the given parameters.
+;; The AMPLITUDE argument is a float and defines the how large
+;; waves are.
+;; The WAVELENGTH argument is a float and defines how often the
+;; waves occur.
+(define-ffi-function Wand:wave-image "MagickWaveImage" MagickBooleanType
+  (MagickWand :double :double) libmagickwand)
 
 ;; Swirl the image associated with WAND by DEGREES.
 (define-ffi-function Wand:swirl-image "MagickSwirlImage" MagickBooleanType
@@ -849,8 +1126,16 @@ effect to wipe hard contrasts."
 (define-ffi-function Wand:trim-image "MagickTrimImage" MagickBooleanType
   (MagickWand :double) libmagickwand)
 
+;; Preview operations
 (define-ffi-function Wand:preview-images "MagickPreviewImages" MagickWand
   (MagickWand MagickPreviewType) libmagickwand)
+
+;; Takes all images from the current image pointer to the end of the
+;; image list and smushs them to each other top-to-bottom if the stack
+;; parameter is true, otherwise left-to-right
+(define-ffi-function Wand:smush-images "MagickSmushImages" MagickWand
+  ;; wand stack offset
+  (MagickWand MagickBooleanType :ssize_t) libmagickwand)
 
 (define-ffi-function Wand:MagickNegateImage "MagickNegateImage" MagickBooleanType
   (MagickWand MagickBooleanType) libmagickwand)
@@ -935,11 +1220,30 @@ effect to wipe hard contrasts."
 (define-ffi-function Wand:implode-image "MagickImplodeImage" MagickBooleanType
   (MagickWand :double) libmagickwand)
 
+;; MagickShadeImage() shines a distant light on an image to create a
+;; three-dimensional effect. You control the positioning of the light
+;; with azimuth and elevation; azimuth is measured in degrees off the
+;; x axis and elevation is measured in pixels above the Z axis.
+;;
+;; GRAY - A value other than zero shades the intensity of each pixel.
+;; AZIMUTH, ELEVATION - Define the light source direction.
+(define-ffi-function Wand:shade-image "MagickShadeImage" MagickBooleanType
+  (MagickWand MagickBooleanType :double :double) libmagickwand)
+
 ;; MagickVignetteImage() softens the edges of the image in vignette
 ;; style.
 (define-ffi-function Wand:vignette-image "MagickVignetteImage" MagickBooleanType
   ;; wand black-point white-point x y
   (MagickWand :double :double :double :double) libmagickwand)
+
+;; MagickSketchImage() simulates a pencil sketch. We convolve the
+;; image with a Gaussian operator of the given radius and standard
+;; deviation (sigma). For reasonable results, radius should be larger
+;; than sigma. Use a radius of 0 and SketchImage() selects a suitable
+;; radius for you. Angle gives the angle of the blurring motion.
+(define-ffi-function Wand:sketch-image "MagickSketchImage" MagickBooleanType
+  ;; wand radius sigma angle
+  (MagickWand :double :double :double) libmagickwand)
 
 ;; Enhance the edges of the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
@@ -954,6 +1258,7 @@ effect to wipe hard contrasts."
 
 ;;}}}
 ;;{{{ Util image, glyph and size related functions
+
 (defun Wand:emacs-image-internal (wand x y w h)
   "Return Emacs image spec."
   (let ((pxd (Wand:get-image-pixels-internal wand 'rgb x y w h)))
@@ -962,7 +1267,6 @@ effect to wipe hard contrasts."
           :data (list (car pxd) (cdr pxd)
                       (make-finalizer
                        `(lambda ()
-                          (message "FREEE ffi memory")
                           (ffi-free ,(cdr pxd)))))
           :format 'image/x-rgb
           :width w :height h)))
@@ -971,6 +1275,20 @@ effect to wipe hard contrasts."
   "Return Emacs image for the WAND."
   (Wand:emacs-image-internal
    wand 0 0 (Wand:image-width wand) (Wand:image-height wand)))
+
+(cl-defun Wand:emacs-insert (wand &key (keymap nil) (offset nil)
+                                  (pointer 'arrow))
+  "Insert WAND into Emacs buffer."
+  (let* ((x (or (car offset) 0))
+         (y (or (cdr offset) 0))
+         (w (- (Wand:image-width wand) x))
+         (h (- (Wand:image-height wand) y))
+         (image (Wand:emacs-image-internal wand x y w h))
+         (start (point)))
+    (insert " ")
+    (set-text-properties
+     start (point)
+     (list 'display image 'keymap keymap 'pointer pointer))))
 
 (defun Wand:fit-size (wand max-width max-height &optional scaler force)
   "Fit WAND image into MAX-WIDTH and MAX-HEIGHT.
@@ -1004,22 +1322,8 @@ Return non-nil if fiting was performed."
                  (MagickOrientationLeftBottom -90))))
     (when angle
       (setf (Wand:image-orientation wand) MagickOrientationTopLeft)
-      (Wand-operation-apply 'rotate wand angle))))
-
-(defun Wand:preview-emacs-image (wand)
-  (let ((off-x (get 'preview-wand 'offset-x))
-        (off-y (get 'preview-wand 'offset-y)))
-    (Wand:emacs-image-internal
-     wand off-x off-y
-     (- (Wand:image-width wand) off-x)
-     (- (Wand:image-height wand) off-y))))
-
-(defun Wand:insert-emacs-image (image &optional keymap)
-  (let ((start (point)))
-    (insert " ")
-    (set-text-properties
-     start (point)
-     (list 'display image 'keymap keymap 'pointer 'arrow))))
+      (wand--operation-apply wand nil
+                             'rotate angle))))
 
 ;;}}}
 
@@ -1046,7 +1350,7 @@ The standard deviation of the Gaussian, in pixels"
   :type 'number
   :group 'wand)
 
-(defcustom wand-pattern-composite-op "dst-over"
+(defcustom wand-pattern-composite-op "blend"
   "Default composite for 'pattern' operation."
   :type 'string
   :group 'wand)
@@ -1148,6 +1452,7 @@ your own scaler with `Wand-make-scaler'."
     (define-key map [undo] #'wand-undo)
     (define-key map (kbd "C-x C-/") #'wand-redo)
     (define-key map (kbd "C-x M-:") #'wand-edit-operations)
+    (define-key map (kbd ":") #'wand-edit-operations)
     (define-key map (kbd "C-.") #'wand-repeat-last-operation)
 
     ;; Saving
@@ -1155,7 +1460,7 @@ your own scaler with `Wand-make-scaler'."
     (define-key map (kbd "C-x C-w") #'wand-write-file)
 
     ;; Navigation
-    (define-key map [space] #'wand-next-image)
+    (define-key map (kbd "SPC") #'wand-next-image)
     (define-key map [backspace] #'wand-prev-image)
     (define-key map (kbd "M-<") #'wand-first-image)
     (define-key map (kbd "M->") #'wand-last-image)
@@ -1294,166 +1599,116 @@ ARGS specifies arguments to operation, first must always be wand."
     `(defun ,fsym ,args
        ,@body)))
 
-(defmacro wand--possible-for-region (wand &rest body)
-  `(if preview-region
-       (let* ((iwand ,wand)
-              (region (wand--image-region))
-              (wand (apply #'Wand:image-region iwand region)))
-         (unwind-protect
-             (progn
-               ,@body
-               (Wand:image-composite
-                iwand wand (cdr (assoc "copy" WandCompositeOperators))
-                (nth 2 region) (nth 3 region)))
-           (setq preview-region nil)
-           (Wand:delete-wand wand)))
-     ,@body))
-(put 'wand--possible-for-region 'lisp-indent-function 'defun)
+(define-wand-operation region (wand region op)
+  "Apply operation OP to REGION."
+  (let ((cwand (apply #'Wand:image-region wand region)))
+    (unwind-protect
+        (prog1
+          (apply (wand--operation-lookup (car op)) cwand (cdr op))
+
+          (Wand:image-composite
+           wand cwand (cdr (assoc "copy" WandCompositeOperators))
+           (nth 2 region) (nth 3 region)))
+      (Wand:delete-wand cwand))))
 
 (define-wand-operation flip (wand)
-  "Flip the image."
-  (wand--possible-for-region wand
-    (Wand:flip-image wand)))
+  (Wand:flip-image wand))
 
 (define-wand-operation flop (wand)
-  "Flop the image."
-  (wand--possible-for-region wand
-    (Wand:flop-image wand)))
+  (Wand:flop-image wand))
+
+(define-wand-operation mirror (wand how)
+  (cl-ecase how
+    (:vertical (Wand:transpose-image wand))
+    (:horizontal (Wand:transverse-image wand))))
 
 (define-wand-operation normalize (wand)
-  "Normalise image."
-  (wand--possible-for-region wand
-    (Wand:normalize-image wand)))
+  (Wand:normalize-image wand))
 
 (define-wand-operation despeckle (wand)
-  "Despeckle image."
-  (wand--possible-for-region wand
-    (Wand:despeckle-image wand)))
+  (Wand:despeckle-image wand))
 
 (define-wand-operation enhance (wand)
-  "Enhance image."
-  (wand--possible-for-region wand
-    (Wand:enhance-image wand)))
+  (Wand:enhance-image wand))
 
 (define-wand-operation equalize (wand)
-  "Equalise image."
-  (wand--possible-for-region wand
-    (Wand:equalize-image wand)))
+  (Wand:equalize-image wand))
 
 (define-wand-operation gauss-blur (wand radius sigma)
-  "Gauss blur image."
-  (wand--possible-for-region wand
-    (Wand:gaussian-blur-image wand (float radius) (float sigma))))
+  (Wand:gaussian-blur-image wand (float radius) (float sigma)))
 
 (define-wand-operation radial-blur (wand angle)
-  "Radial blur."
-  (wand--possible-for-region wand
-    (Wand:radial-blur-image wand (float angle))))
+  (Wand:radial-blur-image wand (float angle)))
 
 (define-wand-operation motion-blur (wand radius sigma angle)
-  "Motion blur."
-  (wand--possible-for-region wand
-    (Wand:motion-blur-image wand (float radius) (float sigma) (float angle))))
+  (Wand:motion-blur-image wand (float radius) (float sigma) (float angle)))
+
+(define-wand-operation sketch (wand radius sigma angle)
+  (Wand:sketch-image wand (float radius) (float sigma) (float angle)))
 
 (define-wand-operation sharpen (wand radius sigma)
-  "Sharpenize image."
-  (wand--possible-for-region wand
-    (Wand:sharpen-image wand (float radius) (float sigma))))
+  (Wand:sharpen-image wand (float radius) (float sigma)))
 
 (define-wand-operation shadow (wand opacity sigma x y)
-  "Emulate shadow in image."
-  (wand--possible-for-region wand
-    (Wand:shadow-image wand (float opacity) (float sigma) x y)))
+  (Wand:shadow-image wand (float opacity) (float sigma) x y))
 
 (define-wand-operation negate (wand greyp)
-  "Negate image."
-  (wand--possible-for-region wand
-    (Wand:negate-image wand greyp)))
+  (Wand:negate-image wand greyp))
 
 (define-wand-operation modulate (wand mtype minc)
-  "Modulate the image WAND using MTYPE by MINC."
-  (wand--possible-for-region wand
-    (Wand:modulate-image wand mtype (float (+ 100 minc)))))
+  (Wand:modulate-image wand mtype (float (+ 100 minc))))
 
-(define-Wand-operation grayscale (wand)
-  "Grayscale image."
-  (Wand-possible-for-region wand
-    (Wand:SetImageColorspace wand :GRAYColorspace)))
+(define-wand-operation grayscale (wand)
+  (Wand:SetImageColorspace
+   wand (cdr (assoc "GRAY" MagickColorspaceTypes))))
 
 (define-wand-operation solarize (wand threshold)
-  "Solarise image by THRESHOLD."
-  (wand--possible-for-region wand
-    (Wand:solarize-image wand (float threshold))))
+  (Wand:solarize-image wand (float threshold)))
 
 (define-wand-operation swirl (wand degrees)
-  "Swirl image."
-  (wand--possible-for-region wand
-    (Wand:swirl-image wand (float degrees))))
+  (Wand:swirl-image wand (float degrees)))
 
 (define-wand-operation oil (wand radius)
-  "Simulate oil-painting of image."
-  (wand--possible-for-region wand
-    (Wand:oil-paint-image wand (float radius))))
+  (Wand:oil-paint-image wand (float radius)))
 
 (define-wand-operation charcoal (wand radius sigma)
-  "Simulate charcoal painting of image."
-  (wand--possible-for-region wand
-    (Wand:charcoal-image wand (float radius) (float sigma))))
+  (Wand:charcoal-image wand (float radius) (float sigma)))
 
 (define-wand-operation sepia-tone (wand threshold)
-  "Apply sepia tone to image by THRESHOLD."
-  (wand--possible-for-region wand
-    (Wand:sepia-tone-image wand (float threshold))))
+  (Wand:sepia-tone-image wand (float threshold)))
 
 (define-wand-operation implode (wand radius)
-  "Implude image by RADIUS."
-  (wand--possible-for-region wand
-    (Wand:implode-image wand (float radius))))
+  (Wand:implode-image wand (float radius)))
 
-(define-Wand-operation wave (wand amplitude wave-length)
-  "Create wave effect for image with AMPLITUDE and WAVE-LENGTH."
-  (Wand-possible-for-region wand
-    (Wand:wave-image wand (float amplitude) (float wave-length))))
+(define-wand-operation shade (wand grayp azimuth elevation)
+  (Wand:shade-image wand (if grayp 1 0) (float azimuth) (float elevation)))
+
+(define-wand-operation wave (wand amplitude wave-length)
+  (Wand:wave-image wand (float amplitude) (float wave-length)))
 
 (define-wand-operation vignette (wand white black x y)
-  "Vignette from image."
-  (wand--possible-for-region wand
-    (Wand:vignette-image wand (float white) (float black) (float x) (float y))))
+  (Wand:vignette-image wand (float white) (float black) (float x) (float y)))
 
 (define-wand-operation edge (wand radius)
-  "Enhance the edges of the image."
-  (wand--possible-for-region wand
-    (Wand:edge-image wand (float radius))))
+  (Wand:edge-image wand (float radius)))
 
 (define-wand-operation emboss (wand radius sigma)
-  "Emboss the image, i.e. add relief."
-  (wand--possible-for-region wand
-    (Wand:emboss-image wand (float radius) (float sigma))))
+  (Wand:emboss-image wand (float radius) (float sigma)))
 
 (define-wand-operation reduce-noise (wand radius)
-  "Reduce noise in the image."
-  (wand--possible-for-region wand
-    (Wand:reduce-noise-image wand (float radius))))
+  (Wand:reduce-noise-image wand (float radius)))
 
 (define-wand-operation add-noise (wand noise-type)
-  "Add noise to image."
-  (wand--possible-for-region wand
-    (Wand:add-noise-image wand (cdr (assoc noise-type MagickNoiseTypes)))))
+  (Wand:add-noise-image wand (cdr (assoc noise-type MagickNoiseTypes))))
 
 (define-wand-operation spread (wand radius)
-  "Spread the image."
-  (wand--possible-for-region wand
-    (Wand:spread-image wand (float radius))))
+  (Wand:spread-image wand (float radius)))
 
 (define-wand-operation trim (wand fuzz)
-  "Trim the image."
-  (wand--possible-for-region wand
-    (Wand:trim-image wand (float fuzz))))
+  (Wand:trim-image wand (float fuzz)))
 
 (define-wand-operation raise (wand raise)
-  "Raise (3d button effect) the image."
-  (wand--possible-for-region wand
-    (Wand:raise-image wand raise)))
+  (Wand:raise-image wand raise))
 
 (define-wand-operation rotate (wand degree)
   "Rotate image by DEGREE.
@@ -1471,18 +1726,12 @@ This is NOT lossless rotation for jpeg-like formats."
 
 (define-wand-operation contrast (wand cp)
   "Increase/decrease contrast of the image."
-  (wand--possible-for-region wand
-    (Wand:MagickContrastImage wand (if (eq cp :increase) 1 0))))
+  (Wand:MagickContrastImage wand (if (eq cp :increase) 1 0)))
 
 (define-wand-operation sigmoidal-contrast (wand cp strength midpoint)
-  "Increase/decrease contrast of the image.
-CP - `:increase' to increase, `:decrease' to decrease.
-STRENGTH - larger the number the more 'threshold-like' it becomes.
-MIDPOINT - midpoint of the function as a color value 0 to QuantumRange"
-  (wand--possible-for-region wand
-    (Wand:MagickSigmoidalContrastImage
-     wand (if (eq cp :increase) 1 0) (float strength)
-     (* (Wand:quantum-range) (/ midpoint 100.0)))))
+  (Wand:MagickSigmoidalContrastImage
+   wand (if (eq cp :increase) 1 0) (float strength)
+   (* (Wand:quantum-range) (/ midpoint 100.0))))
 
 (define-wand-operation scale (wand width height)
   (Wand:scale-image wand width height))
@@ -1523,11 +1772,9 @@ BLUR is float, 0.25 for insane pixels, > 2.0 for excessively smoth."
 (define-wand-operation preview-op (wand ptype)
   "Preview operation PTYPE.
 Return a new wand."
-  (wand--possible-for-region wand
-    (Wand:preview-images
-     wand (cdr (assoc ptype MagickPreviewTypes)))))
+  (Wand:preview-images
+   wand (cdr (assoc ptype MagickPreviewTypes))))
 
-;; TODO: pattern composition
 (define-wand-operation pattern (wand pattern op)
   (Wand-with-wand cb-wand
     (setf (Wand:image-size cb-wand)
@@ -1547,8 +1794,8 @@ Return a new wand."
   (unless preview-region
     (error "Region not selected"))
 
-  (let ((off-x (get 'preview-wand 'offset-x))
-        (off-y (get 'preview-wand 'offset-y))
+  (let ((off-x (car preview-offset))
+        (off-y (cdr preview-offset))
         (xcoeff (/ (float (Wand:image-width image-wand))
                    (Wand:image-width preview-wand)))
         (ycoeff (/ (float (Wand:image-height image-wand))
@@ -1670,25 +1917,36 @@ Return a new wand."
         (after-change-functions nil))
 
     (when wand-show-operations
-      (when operations-list
-        (let ((start (point)))
-          (insert (format "Operations: %S" operations-list) "\n")
-          (add-text-properties start (point) '(read-only nil))))
-
       (when wand-global-operations-list
         (insert (format "Global operations: %S"
-                        wand-global-operations-list) "\n")))
+                        wand-global-operations-list) "\n"))
+
+      ;; TODO: some kind of widget, so operations can be edited
+      ;; inplace
+      (when operations-list
+        ;; (widget-create 'editable-field
+        ;;                :size 20
+        ;;                ;; bad name ..
+        ;;                :action #'wand-operations-apply-string
+        ;;                :format "Operations: %v"
+        ;;                (format "%S" operations-list))
+        ;; (insert "\n")
+        ;; (widget-setup))
+        (insert (format "Operations: %S" operations-list) "\n"))
+        ))
 
     ;; Info about pickup color
     (when (boundp 'pickup-color)
       (declare (special pickup-color))
-      (let* ((cf (make-face (gensym "dcolor-") nil t))
+      (let* ((cf (make-face (gensym "dcolor-")))
              (place (car pickup-color))
              (color (cdr pickup-color))
              (fcol (apply #'format "#%02x%02x%02x" color)))
         (set-face-background cf fcol)
         (insert (format "Color: +%d+%d " (car place) (cdr place)))
-        (insert-face "      " cf)
+        (let ((spaces "      "))
+          (add-face-text-property 0 (length spaces) cf nil spaces)
+          (insert spaces))
         (insert (format " %s R:%d, G:%d, B:%d\n" fcol
                         (car color) (cadr color) (caddr color)))))
 
@@ -1726,18 +1984,18 @@ Return a new wand."
   (when preview-region
     (multiple-value-bind (w h x y) preview-region
       ;; Take into account current offset
-      (incf x (get 'preview-wand 'offset-x))
-      (incf y (get 'preview-wand 'offset-y))
+      (incf x (car preview-offset))
+      (incf y (cdr preview-offset))
       (Wand-with-drawing-wand dw
         (Wand-with-pixel-wand pw
-          (setf (Wand:pixel-color pw) Wand-mode-region-outline-color)
+          (setf (Wand:pixel-color pw) wand-region-outline-color)
           (Wand:DrawSetStrokeColor dw pw))
         (Wand-with-pixel-wand pw
-          (setf (Wand:pixel-color pw) Wand-mode-region-fill-color)
+          (setf (Wand:pixel-color pw) wand-region-fill-color)
           (setf (Wand:draw-fill-color dw) pw))
-        (setf (Wand:draw-stroke-width dw) Wand-mode-region-outline-width
-              (Wand:draw-stroke-opacity dw) Wand-mode-region-outline-opacity
-              (Wand:draw-fill-opacity dw) Wand-mode-region-fill-opacity)
+        (setf (Wand:draw-stroke-width dw) wand-region-outline-width
+              (Wand:draw-stroke-opacity dw) wand-region-outline-opacity
+              (Wand:draw-fill-opacity dw) wand-region-fill-opacity)
         (Wand:draw-lines dw (list (cons x y) (cons (+ x w) y)
                                   (cons (+ x w) (+ y h)) (cons x (+ y h))
                                   (cons x y)))
@@ -1747,12 +2005,10 @@ Return a new wand."
 
 (defun wand--insert-preview ()
   "Display wand W at the point."
-  ;; NOTE: if size not changed, then keep offset-x and offset-y
-  ;; properties
   (let ((saved-w (and preview-wand (Wand:image-width preview-wand)))
         (saved-h (and preview-wand (Wand:image-height preview-wand)))
-        (off-x (or (get 'preview-wand 'offset-x) 0))
-        (off-y (or (get 'preview-wand 'offset-y) 0)))
+        (off-x (or (car preview-offset) 0))
+        (off-y (or (cdr preview-offset) 0)))
     ;; Delete old preview and create new one
     (when preview-wand (Wand:delete-wand preview-wand))
     (setq preview-wand (Wand:get-image image-wand))
@@ -1771,13 +2027,10 @@ Return a new wand."
                    (Wand:image-height preview-wand)
                    scale-w scale-h))))
 
-    ;; Set offset properties
-    (if (and (eq saved-w (Wand:image-width preview-wand))
-             (eq saved-h (Wand:image-height preview-wand)))
-        (progn (put 'preview-wand 'offset-x off-x)
-               (put 'preview-wand 'offset-y off-y))
-      (put 'preview-wand 'offset-x 0)
-      (put 'preview-wand 'offset-y 0))
+    ;; NOTE: if size not changed, then keep `preview-offset' value
+    (unless (and (eq saved-w (Wand:image-width preview-wand))
+                 (eq saved-h (Wand:image-height preview-wand)))
+      (setq preview-offset '(0 . 0)))
 
     ;; Hackery to insert invisible char, so widget-delete won't affect
     ;; preview-glyph visibility
@@ -1787,9 +2040,8 @@ Return a new wand."
 
     (let ((pwr (wand--preview-with-region)))
       (unwind-protect
-          (Wand:insert-emacs-image
-           (Wand:preview-emacs-image (or pwr preview-wand))
-           wand-mode-map)
+          (Wand:emacs-insert
+           (or pwr preview-wand) :keymap wand-mode-map :offset preview-offset)
         (when pwr
           (Wand:delete-wand pwr))))))
 
@@ -1851,7 +2103,7 @@ Return a new wand."
       (setq preview-region nil)
       (setq preview-offset nil)
       (setq last-preview-region nil)
-      (setq operations-list nil)
+      (setq operations-list wand-global-operations-list)
       (setq undo-list nil)
       (Wand:clear-wand image-wand)
       ;; Fix buffer-file-name in case of viewing directory
@@ -1860,10 +2112,8 @@ Return a new wand."
       (setq buffer-file-name file)
       (setq default-directory (file-name-directory file))
 
-      (unless (Wand:read-image image-wand file)
-        (unwind-protect
-            (error "Can't read file %s: %s" file (Wand:exception image-wand))
-          (kill-buffer (current-buffer))))
+      ;; Will raise error if something wrong
+      (Wand:read-image image-wand file)
 
       ;; NOTE: New IM sets iterator index to last page, we want to
       ;; start from the first page
@@ -1873,11 +2123,7 @@ Return a new wand."
         (Wand:correct-orientation image-wand))
 
       ;; Apply operations in case global operations list is used
-      (mapc #'(lambda (op)
-                (apply #'Wand-operation-apply
-                       (car op) image-wand (cdr op)))
-            wand-global-operations-list)
-
+      (wand--operation-list-apply image-wand)
       (wand--redisplay)
 
       ;; Finally run hook
@@ -1899,16 +2145,17 @@ Bindings are:
 ;;;###autoload
 (defun Wand-find-file-enable ()
   "Enable `find-file' to use `Wand-display' for supported filetypes."
-  (push '(Wand-file-supported-for-read-p . Wand-display-noselect)
+  (push '(wand-file-supported-for-read-p . wand-display-noselect)
         find-file-magic-files-alist))
 
 (defun wand--cleanup ()
   "Cleanup when wand buffer is killed."
-  (when preview-wand
-    (Wand:delete-wand preview-wand)
-    (setq preview-wand nil))
-  (Wand:delete-wand image-wand)
-  (setq image-wand nil))
+  (ignore-errors
+    (when preview-wand
+      (Wand:delete-wand preview-wand)
+      (setq preview-wand nil))
+    (Wand:delete-wand image-wand)
+    (setq image-wand nil)))
 
 (defun wand-quit ()
   "Quit Wand display mode."
@@ -1953,12 +2200,9 @@ Bindings are:
 (defun wand-format-can-read-p (format)
   "Return non-nil if wand can read files in FORMAT."
   (unless (member (downcase format) wand-formats-cant-read)
-    (let ((fi (Wand:GetMagickInfo
-               format (ffi-address-of
-                       (make-ffi-object 'MagickExceptionInfo)))))
-      (and (not (ffi-null-p fi))
-           (not (ffi-null-p (MagickInfo->decoder fi)))
-           ))))
+    (let ((fi (Wand:get-magick-info format)))
+      (and (not (ffi-pointer-null-p fi))
+           (not (ffi-pointer-null-p (MagickInfo-decoder fi)))))))
 ;; ImageMagick on linux treats any format to be RAW for some reason
 ;; We can't read raw formats
 ;           (not (MagickInfo->raw fi))))))
@@ -1972,11 +2216,9 @@ Bindings are:
 (defun wand-format-can-write-p (format)
   "Return non-nil if wand can write files in FORMAT."
   (unless (member (downcase format) wand-formats-cant-write)
-    (let ((fi (Wand:GetMagickInfo
-               format (ffi-address-of
-                       (make-ffi-object 'MagickExceptionInfo)))))
-      (and (not (ffi-null-p fi))
-           (not (ffi-null-p (MagickInfo->encoder fi)))))))
+    (let ((fi (Wand:get-magick-info format)))
+      (and (not (ffi-pointer-null-p fi))
+           (not (ffi-pointer-null-p (MagickInfo-encoder fi)))))))
 
 ;;;###autoload
 (defun wand-file-can-read-p (file)
@@ -1991,24 +2233,27 @@ Optionally you can specify MODE:
   'write - Only formats that we can write
   'read-write - Formats that we can and read and write
   'any or nil - Any format (default)."
-  (let* ((excp (make-ffi-object 'MagickExceptionInfo))
-         (num (make-ffi-object 'unsigned-long))
-         (fil (Wand:GetMagickInfoList
-               fmt-regexp (ffi-address-of num) (ffi-address-of excp))))
-    (unless (ffi-null-p fil)
-      (unwind-protect
-          (loop for n from 0 below (ffi-get num)
-            with minfo = nil
-            do (setq minfo (ffi-aref fil n))
-            if (ecase (or mode 'any)
-                 (read (not (ffi-null-p (MagickInfo->decoder minfo))))
-                 (write (not (ffi-null-p (MagickInfo->encoder minfo))))
-                 (read-write
-                  (and (not (ffi-null-p (MagickInfo->decoder minfo)))
-                       (not (ffi-null-p (MagickInfo->encoder minfo)))))
-                 (any t))
-            collect (ffi-get (MagickInfo->name minfo) :type 'c-string))
-        (Wand:RelinquishMemory fil)))))
+  (with-ffi-temporaries ((c-num :ulong)
+                         (c-mexc MagickExceptionInfo))
+    (with-ffi-string (c-pat fmt-regexp)
+      (let ((miflist (Wand:GetMagickInfoList c-pat c-num c-mexc)))
+        (unless (ffi-pointer-null-p miflist)
+          (unwind-protect
+              (loop for n from 0 below (ffi-aref c-num :ulong 0)
+                with fmt-name = nil
+                do (setq fmt-name
+                         (ffi-get-c-string
+                          (MagickInfo-name
+                           (ffi-aref miflist :pointer n))))
+                if (ecase (or mode 'any)
+                     (read (wand-format-can-read-p fmt-name))
+                     (write (wand-format-can-write-p fmt-name))
+                     (read-write
+                      (and (wand-format-can-read-p fmt-name)
+                           (wand-format-can-write-p fmt-name)))
+                     (any t))
+                collect (downcase fmt-name))
+            (Wand:RelinquishMemory miflist)))))))
 
 ;;}}}
 
@@ -2019,10 +2264,9 @@ Optionally you can specify MODE:
 If REVERSE-ORDER is specified, then return previous file."
   (let* ((dir (file-name-directory curfile))
          (fn (file-name-nondirectory curfile))
-         (dfiles (directory-files dir nil nil 'sorted-list t))
+         (dfiles (directory-files dir))
          (nfiles (cdr (member fn (if reverse-order (nreverse dfiles) dfiles)))))
-    (while (and nfiles (not (Wand-file-supported-for-read-p
-                             (concat dir (car nfiles)))))
+    (while (and nfiles (not (wand-file-can-read-p (concat dir (car nfiles)))))
       (setq nfiles (cdr nfiles)))
     (and nfiles (concat dir (car nfiles)))))
 
@@ -2061,12 +2305,17 @@ If REVERSE-ORDER is specified, then return previous file."
 (defun wand--operation-lookup (opname)
   (intern (format "wand--op-%S" opname)))
 
-(defun wand--operation-apply (operation wand &rest args)
-  "Apply OPERATION to WAND using addition arguments ARGS."
-  (setq operations-list
-        (append operations-list (list (cons operation args))))
-  (setq undo-list nil)                  ; Reset undo
-  (apply (wand--operation-lookup operation) wand args))
+(defun wand--operation-apply (wand region operation &rest args)
+  "Apply OPERATION to WAND using addition arguments ARGS.
+If REGION is non-nil then apply OPERATION to REGION."
+  (let* ((baseop (cons operation args))
+         (op (if region
+                 (list 'region region baseop)
+               baseop)))
+    (setq operations-list
+          (append operations-list (list op)))
+    (setq undo-list nil)                ; Reset undo
+    (apply (wand--operation-lookup (car op)) wand (cdr op))))
 
 (defun wand--operation-list-apply (wand &optional operations)
   "Apply all operations in OPERATIONS list."
@@ -2081,7 +2330,8 @@ If REVERSE-ORDER is specified, then return previous file."
 (defun wand-flip ()
   "Flip the image."
   (interactive)
-  (wand--operation-apply 'flip image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'flip)
   (wand--redisplay))
 (put 'wand-flip 'transform-operation t)
 (put 'wand-flip 'menu-name "Flip")
@@ -2089,15 +2339,30 @@ If REVERSE-ORDER is specified, then return previous file."
 (defun wand-flop ()
   "Flop the image."
   (interactive)
-  (wand--operation-apply 'flop image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'flop)
   (wand--redisplay))
 (put 'wand-flop 'transform-operation t)
 (put 'wand-flop 'menu-name "Flop")
 
+(defun wand-mirror (mhow)
+  "Mirror the image.
+Same as combination of rotation and flip/flop."
+  (interactive (list (completing-read
+                      "Mirror (default horizontal): "
+                      '(("vertical") ("horizontal"))
+                      nil t nil nil "horizontal")))
+  (wand--operation-apply image-wand preview-region
+                         'mirror (intern-soft (concat ":" mhow)))
+  (wand--redisplay))
+(put 'wand-mirror 'transform-operation t)
+(put 'wand-mirror 'menu-name "Mirror")
+
 (defun wand-trim (fuzz)
   "Trim edges the image."
   (interactive (list (read-number "Fuzz: " 0)))
-  (wand--operation-apply 'trim image-wand (/ fuzz 100.0))
+  (wand--operation-apply image-wand preview-region
+                         'trim (/ fuzz 100.0))
   (wand--redisplay))
 (put 'wand-trim 'transform-operation t)
 (put 'wand-trim 'menu-name "Trim Edges")
@@ -2107,7 +2372,8 @@ If REVERSE-ORDER is specified, then return previous file."
 If ARG is positive then rotate in clockwise direction.
 If negative then to the opposite."
   (interactive "nDegrees: ")
-  (wand--operation-apply 'rotate image-wand arg)
+  (wand--operation-apply image-wand nil
+                         'rotate arg)
   (wand--redisplay))
 (put 'wand-rotate 'can-preview :RotatePreview)
 (put 'wand-rotate 'transform-operation t)
@@ -2132,7 +2398,8 @@ If ARG is specified then rotate on ARG degree."
 (defun wand-raise (arg)
   "Create button-like 3d effect."
   (interactive "P")
-  (wand--operation-apply 'raise image-wand arg)
+  (wand--operation-apply image-wand preview-region
+                         'raise arg)
   (wand--redisplay))
 (put 'wand-raise 'transform-operation t)
 (put 'wand-raise 'menu-name "3D Button Effect")
@@ -2144,7 +2411,8 @@ If ARG is specified then rotate on ARG degree."
 (defun wand-radial-blur (arg)
   "Blur the image radially by ARG degree."
   (interactive (list (read-number "Blur radius: " 2.0)))
-  (wand--operation-apply 'radial-blur image-wand arg)
+  (wand--operation-apply image-wand preview-region
+                         'radial-blur arg)
   (wand--redisplay))
 (put 'wand-radial-blur 'effect-operation t)
 (put 'wand-radial-blur 'menu-name "Radial Blur")
@@ -2154,7 +2422,8 @@ If ARG is specified then rotate on ARG degree."
   (interactive (list (read-number "Radius: " 1)
                      (read-number "Sigma: " wand-sigma)
                      (read-number "Angle: " 2)))
-  (wand--operation-apply 'motion-blur image-wand radius sigma angle)
+  (wand--operation-apply image-wand preview-region
+                         'motion-blur radius sigma angle)
   (wand--redisplay))
 (put 'wand-motion-blur 'effect-operation t)
 (put 'wand-motion-blur 'menu-name "Motion Blur")
@@ -2163,19 +2432,35 @@ If ARG is specified then rotate on ARG degree."
   "Apply gaussian blur of RADIUS and SIGMA to the image."
   (interactive (list (read-number "Radius: " 1)
                      (read-number "Sigma: " wand-sigma)))
-  (wand--operation-apply 'gauss-blur image-wand radius sigma)
+  (wand--operation-apply image-wand preview-region
+                         'gauss-blur radius sigma)
   (wand--redisplay))
 (put 'wand-gaussian-blur 'can-preview "blur")
 (put 'wand-gaussian-blur 'effect-operation t)
 (put 'wand-gaussian-blur 'menu-name "Gaussian Blur")
 
+(defun wand-sketch (radius sigma angle)
+  "Simulate pencil sketch.
+For reasonable results, RADIUS should be larger than SIGMA.
+User 0 RADIUS for autoselect.
+ANGLE gives angle of blurring motion."
+  (interactive (list (read-number "Radius: " 0)
+                     (read-number "Sigma: " wand-sigma)
+                     (read-number "Angle: " 2)))
+  (wand--operation-apply image-wand preview-region
+                         'sketch radius sigma angle)
+  (wand--redisplay))
+(put 'wand-sketch 'effect-operation t)
+(put 'wand-sketch 'menu-name "Sketch")
+
 (defun wand-shadow (opacity sigma x-off y-off)
-  "Sharpen image with by RADIUS and SIGMA."
+  "Shadow."
   (interactive (list (read-number "Opacity in %: " 50)
                      (read-number "Sigma: " wand-sigma)
                      (read-number "Shadow x-offset: " 4)
                      (read-number "Shadow y-offset: " 4)))
-  (wand--operation-apply 'shadow image-wand opacity sigma x-off y-off)
+  (wand--operation-apply image-wand preview-region
+                         'shadow opacity sigma x-off y-off)
   (wand--redisplay))
 (put 'wand-shadow 'effect-operation t)
 (put 'wand-shadow 'menu-name "shadow")
@@ -2184,7 +2469,8 @@ If ARG is specified then rotate on ARG degree."
   "Sharpen image with by RADIUS and SIGMA."
   (interactive (list (read-number "Radius: " 1)
                      (read-number "Sigma: " wand-sigma)))
-  (wand--operation-apply 'sharpen image-wand radius sigma)
+  (wand--operation-apply image-wand preview-region
+                         'sharpen radius sigma)
   (wand--redisplay))
 (put 'wand-sharpen 'can-preview "sharpen")
 (put 'wand-sharpen 'effect-operation t)
@@ -2193,7 +2479,8 @@ If ARG is specified then rotate on ARG degree."
 (defun wand-despeckle ()
   "Despeckle image."
   (interactive)
-  (wand--operation-apply 'despeckle image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'despeckle)
   (wand--redisplay))
 (put 'wand-despeckle 'can-preview "despeckle")
 (put 'wand-despeckle 'effect-operation t)
@@ -2203,7 +2490,8 @@ If ARG is specified then rotate on ARG degree."
   "Enhance edges of the image by RADIUS.
 Default is 1."
   (interactive (list (read-number "Radius: " 1)))
-  (wand--operation-apply 'edge image-wand radius)
+  (wand--operation-apply image-wand preview-region
+                         'edge radius)
   (wand--redisplay))
 (put 'wand-edge 'can-preview "edgedetect")
 (put 'wand-edge 'effect-operation t)
@@ -2213,7 +2501,8 @@ Default is 1."
   "Emboss the image with RADIUS and SIGMA."
   (interactive (list (read-number "Radius: " 1.0)
                      (read-number "Sigma: " wand-sigma)))
-  (wand--operation-apply 'emboss image-wand radius sigma)
+  (wand--operation-apply image-wand preview-region
+                         'emboss radius sigma)
   (wand--redisplay))
 (put 'wand-emboss 'effect-operation t)
 (put 'wand-emboss 'menu-name "Emboss")
@@ -2222,7 +2511,8 @@ Default is 1."
   "Reduce the noise with RADIUS.
 Default is 1."
   (interactive (list (read-number "Noise reduce radius: " 1)))
-  (wand--operation-apply 'reduce-noise image-wand radius)
+  (wand--operation-apply image-wand preview-region
+                         'reduce-noise radius)
   (wand--redisplay))
 (put 'wand-reduce-noise 'can-preview :ReduceNoisePreview)
 (put 'wand-reduce-noise 'effect-operation t)
@@ -2234,7 +2524,8 @@ Default is 1."
    (list (completing-read "Noise type [poisson]: "
                           MagickNoiseTypes
                           nil t nil nil "poisson")))
-  (wand--operation-apply 'add-noise image-wand noise-type)
+  (wand--operation-apply image-wand preview-region
+                         'add-noise noise-type)
   (wand--redisplay))
 (put 'wand-add-noise 'effect-operation t)
 (put 'wand-add-noise 'menu-name "Add Noise")
@@ -2242,7 +2533,8 @@ Default is 1."
 (defun wand-spread (radius)
   "Spread image pixels with RADIUS."
   (interactive (list (read-number "Spread radius: " 1.0)))
-  (wand--operation-apply 'spread image-wand radius)
+  (wand--operation-apply image-wand preview-region
+                         'spread radius)
   (wand--redisplay))
 (put 'wand-spread 'effect-operation t)
 (put 'wand-spread 'menu-name "Spread")
@@ -2258,21 +2550,25 @@ By default increase."
                       "Contrast (default increase): "
                       '(("increase") ("decrease"))
                       nil t nil nil "increase")))
-  (wand--operation-apply 'contrast image-wand
-                         (intern-soft (concat ":" ctype)))
+  (wand--operation-apply image-wand preview-region
+                         'contrast (intern-soft (concat ":" ctype)))
   (wand--redisplay))
 (put 'wand-contrast 'enhance-operation t)
 (put 'wand-contrast 'menu-name "Contrast")
 
 (defun wand-sigmoidal-contrast (ctype strength midpoint)
-  "Apply sigmoidal contrast adjustement."
+  "Increase/decrease contrast of the image.
+CTYPE - `:increase' to increase, `:decrease' to decrease.
+STRENGTH - larger the number the more 'threshold-like' it becomes.
+MIDPOINT - midpoint of the function as a color value 0 to QuantumRange"
   (interactive (list (completing-read
                       "Contrast (default increase): "
                       '(("increase") ("decrease"))
                       nil t nil nil "increase")
                      (read-number "Strength: " 5)
                      (read-number "Midpoint in %: " 0)))
-  (wand--operation-apply 'sigmoidal-contrast image-wand
+  (wand--operation-apply image-wand preview-region
+                         'sigmoidal-contrast
                          (intern-soft (concat ":" ctype))
                          strength midpoint)
   (wand--redisplay))
@@ -2282,7 +2578,8 @@ By default increase."
 (defun wand-normalize ()
   "Normalize image."
   (interactive)
-  (wand--operation-apply 'normalize image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'normalize)
   (wand--redisplay))
 (put 'wand-normalize 'enhance-operation t)
 (put 'wand-normalize 'menu-name "Normalize")
@@ -2290,7 +2587,8 @@ By default increase."
 (defun wand-enhance ()
   "Enhance image."
   (interactive)
-  (wand--operation-apply 'enhance image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'enhance)
   (wand--redisplay))
 (put 'wand-enhance 'enhance-operation t)
 (put 'wand-enhance 'menu-name "Enhance")
@@ -2298,7 +2596,8 @@ By default increase."
 (defun wand-equalize ()
   "Equalise image."
   (interactive)
-  (wand--operation-apply 'equalize image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'equalize)
   (wand--redisplay))
 (put 'wand-equalize 'enhance-operation t)
 (put 'wand-equalize 'menu-name "Equalize")
@@ -2307,7 +2606,8 @@ By default increase."
   "Negate image.
 If prefix ARG is specified then negate by grey."
   (interactive "P")
-  (wand--operation-apply 'negate image-wand arg)
+  (wand--operation-apply image-wand preview-region
+                         'negate arg)
   (wand--redisplay))
 (put 'wand-negate 'enhance-operation t)
 (put 'wand-negate 'menu-name "Negate")
@@ -2315,7 +2615,8 @@ If prefix ARG is specified then negate by grey."
 (defun wand-grayscale ()
   "Convert image to grayscale colorspace."
   (interactive)
-  (wand--operation-apply 'grayscale image-wand)
+  (wand--operation-apply image-wand preview-region
+                         'grayscale)
   (wand--redisplay))
 (put 'wand-grayscale 'enhance-operation t)
 (put 'wand-grayscale 'menu-name "Grayscale")
@@ -2330,7 +2631,8 @@ If prefix ARG is specified then negate by grey."
                  (list (cond ((string= tp "brightness") :brightness)
                              ((string= tp "hue") :hue)
                              (t :saturation)) tinc)))
-  (wand--operation-apply 'modulate image-wand type inc)
+  (wand--operation-apply image-wand preview-region
+                         'modulate type inc)
   (wand--redisplay))
 (put 'wand-modulate 'enhance-operation t)
 (put 'wand-modulate 'menu-name "Modulate")
@@ -2342,16 +2644,17 @@ If prefix ARG is specified then negate by grey."
 (defun wand-preview-op (op)
   "Preview some operation OP with 8 subnails."
   (interactive (list (completing-read "Operation: "
-			MagickPreviewTypes nil t)))
-  (wand--redisplay (wand--operation-apply 'preview-op image-wand op)))
+                        MagickPreviewTypes nil t)))
+  (wand--redisplay (wand--operation-apply image-wand preview-region
+                                          'preview-op op)))
 (put 'wand-preview-op 'f/x-operation t)
 (put 'wand-preview-op 'menu-name "Preview operation")
 
 (defun wand-solarize (sf)
   "Solarise image with solarize factor SF."
   (interactive (list (read-number "Solarize in %: " 50)))
-  (wand--operation-apply 'solarize image-wand
-                         (* (Wand:quantum-range) (/ sf 100.0)))
+  (wand--operation-apply image-wand preview-region
+                         'solarize (* (Wand:quantum-range) (/ sf 100.0)))
   (wand--redisplay))
 (put 'wand-solarize 'can-preview "solarize")
 (put 'wand-solarize 'f/x-operation t)
@@ -2360,7 +2663,8 @@ If prefix ARG is specified then negate by grey."
 (defun wand-swirl (degrees)
   "Swirl the image by DEGREES."
   (interactive (list (read-number "Degrees: " 90)))
-  (wand--operation-apply 'swirl image-wand degrees)
+  (wand--operation-apply image-wand preview-region
+                         'swirl degrees)
   (wand--redisplay))
 (put 'wand-swirl 'f/x-operation t)
 (put 'wand-swirl 'menu-name "Swirl")
@@ -2369,7 +2673,8 @@ If prefix ARG is specified then negate by grey."
   "Simulate oil painting with RADIUS for the image.
 Default radius is 3."
   (interactive (list (read-number "Radius: " 2.5)))
-  (wand--operation-apply 'oil image-wand radius)
+  (wand--operation-apply image-wand preview-region
+                         'oil radius)
   (wand--redisplay))
 (put 'wand-oil-paint 'can-preview "oilpaint")
 (put 'wand-oil-paint 'f/x-operation t)
@@ -2380,8 +2685,9 @@ Default radius is 3."
 If prefix ARG is specified then radius for charcoal painting is ARG.
 Default is 1."
   (interactive (list (read-number "Radius: " 1.0)
-		     (read-number "Sigma: " wand-sigma)))
-  (wand--operation-apply 'charcoal image-wand radius sigma)
+                     (read-number "Sigma: " wand-sigma)))
+  (wand--operation-apply image-wand preview-region
+                         'charcoal radius sigma)
   (wand--redisplay))
 (put 'wand-charcoal 'can-preview "charcoal-drawing")
 (put 'wand-charcoal 'f/x-operation t)
@@ -2390,8 +2696,9 @@ Default is 1."
 (defun wand-sepia-tone (threshold)
   "Apply sepia tone to image by THRESHOLD."
   (interactive (list (read-number "Threshold in %: " 80)))
-  (wand--operation-apply 'sepia-tone image-wand
-                         (* (Wand:quantum-range) (/ threshold 100.0)))
+  (wand--operation-apply image-wand preview-region
+                         'sepia-tone (* (Wand:quantum-range)
+                                        (/ threshold 100.0)))
   (wand--redisplay))
 (put 'wand-sepia-tone 'f/x-operation t)
 (put 'wand-sepia-tone 'menu-name "Sepia Tone")
@@ -2400,27 +2707,46 @@ Default is 1."
   "Implode image by RADIUS.
 RADIUS range is [-1.0, 1.0]."
   (interactive (list (read-number "Radius: " 0.3)))
-  (wand--operation-apply 'implode image-wand radius)
+  (wand--operation-apply image-wand preview-region
+                         'implode radius)
   (wand--redisplay))
 (put 'wand-implode 'f/x-operation t)
 (put 'wand-implode 'menu-name "Implode")
 
+(defun wand-shade (azimuth elevation grayp)
+  "Shines a distant light on an image to create a three-dimensional effect.
+You control the positioning of the light with azimuth and
+elevation; azimuth is measured in degrees off the x axis and
+elevation is measured in pixels above the Z axis."
+  (interactive (list (read-number "Azimuth in Dg: " 30)
+                     (read-number "Elevation in Px: " 30)
+                     (not current-prefix-arg)))
+  (wand--operation-apply image-wand preview-region
+                         'shade grayp azimuth elevation)
+  (wand--redisplay))
+(put 'wand-shade 'can-preview "shade")
+(put 'wand-shade 'f/x-operation t)
+(put 'wand-shade 'menu-name "Shade")
+
 (defun wand-vignette (bw)
   "Create vignette using image."
   (interactive (list (read-number "Black/White: " 10)))
-  (wand--operation-apply 'vignette image-wand bw bw 0 0)
+  (wand--operation-apply image-wand preview-region
+                         'vignette bw bw 0 0)
   (wand--redisplay))
 (put 'wand-vignette 'f/x-operation t)
 (put 'wand-vignette 'menu-name "Vignette")
 
-(defun Wand-mode-wave (amplitude wave-length)
+(defun wand-wave (amplitude wave-length)
   "Create wave effect on image with AMPLITUDE and WAVE-LENGTH."
-  (interactive (list (read-number "Amplitude [2]: " nil "2")
-		     (read-number "Wave length [10]: " nil "10")))
-  (Wand-operation-apply 'wave image-wand amplitude wave-length)
-  (Wand-redisplay))
-(put 'Wand-mode-wave 'f/x-operation t)
-(put 'Wand-mode-wave 'menu-name "Wave")
+  (interactive (list (read-number "Amplitude: " 4)
+                     (read-number "Wave length: " 50)))
+  (wand--operation-apply image-wand preview-region
+                         'wave amplitude wave-length)
+  (wand--redisplay))
+(put 'wand-wave 'can-preview "wave")
+(put 'wand-wave 'f/x-operation t)
+(put 'wand-wave 'menu-name "Wave")
 
 ;;}}}
 
@@ -2428,60 +2754,69 @@ RADIUS range is [-1.0, 1.0]."
 
 (defsubst wand--mouse-release-p (event)
   (and (consp event) (symbolp (car event))
-       (memq 'click (get (car event) 'event-symbol-elements))))
+       (or (memq 'click (get (car event) 'event-symbol-elements))
+           (memq 'drag (get (car event) 'event-symbol-elements)))
+       ))
 
 (defsubst wand--motion-event-p (event)
   (and (consp event) (symbolp (car event))
-       (memq 'drag (get (car event) 'event-symbol-elements))))
+       (memq 'mouse-movement (get (car event) 'event-symbol-elements))))
+
+(defun wand-pick-color (event)
+  "Pick color at click point."
+  (interactive "e")
+  (let* ((s-xy (posn-object-x-y (event-start event)))
+         (sx (car s-xy)) (sy (cdr s-xy))
+         (col (Wand:get-rgb-pixel-at preview-wand sx sy))
+         (pickup-color (cons (cons sx sy) col)))
+    (declare (special pickup-color))
+    (wand--update-info)))
 
 ;; TODO
 (defun wand-select-region (event)
   "Select region."
   (interactive "e")
-  (message "EVENT: %S / %S" (posn-x-y (event-start event)) (event-end event))
+  (message "EVENT: %S / %S" (event-start event) (event-end event))
+  (setq eeend (event-end event))
+  (setq ssstr (event-start event))
   (let* ((gc-cons-threshold most-positive-fixnum) ; inhibit gc
-         (s-xy (posn-x-y (event-start event)))
+         (s-xy (posn-object-x-y (event-start event)))
          (sx (car s-xy)) (sy (cdr s-xy))
          (had-preview-region preview-region))
     (setq preview-region (list 0 0 (car s-xy) (cdr s-xy)))
     (track-mouse
       (while (not (wand--mouse-release-p (setq event (read-event))))
         (when (wand--motion-event-p event)
-          (let* ((m-xy (posn-x-y (event-start event)))
+          (let* ((m-xy (posn-object-x-y (event-start event)))
                  (mx (car m-xy)) (my (cdr m-xy)))
             (setq preview-region
                   (list (abs (- sx mx)) (abs (- sy my))
                         (min sx mx) (min sy my)))
             ;; Update info and preview image
             (wand--update-file-info)
-            (let ((pwr (wand--preview-with-region)))
-              (unwind-protect
-                  (progn
-                    (delete-region (1- (point-max)) (point-max))
-                    (Wand:insert-emacs-image
-                     (Wand:preview-emacs-image pwr) wand-mode-map))
-                (Wand:delete-wand pwr))))))
+            ;; (let ((pwr (wand--preview-with-region)))
+            ;;   (unwind-protect
+            ;;       (let ((inhibit-read-only t)
+            ;;             before-change-functions
+            ;;             after-change-functions)
+            ;;         (delete-region (1- (point-max)) (point-max))
+            ;;         (Wand:emacs-insert pwr :keymap wand-mode-map
+            ;;                            :offset preview-offset))
+            ;;     (Wand:delete-wand pwr)))
+            )))
       )
 
-    (if (and (positivep (nth 0 preview-region))
-             (positivep (nth 1 preview-region)))
+    (if (and (> (nth 0 preview-region) 0)
+             (> (nth 1 preview-region) 0))
         ;; Save region
         (setq last-preview-region preview-region)
 
       (setq preview-region nil)
       (if had-preview-region
-          (progn
-            ;; Remove any regions
-            (wand--update-file-info)
-            (delete-region (1- (point-max)) (point-max))
-            (Wand:insert-emacs-image
-             (Wand:preview-emacs-image preview-wand) wand-mode-map))
+          (wand--redisplay)
 
         ;; Otherwise pickup color
-        (let* ((col (Wand:get-rgb-pixel-at preview-wand sx sy))
-               (pickup-color (cons (cons sx sy) col)))
-          (declare (special pickup-color))
-          (Wand-mode-update-info))))))
+        (wand-pick-color event)))))
 
 (defun wand-activate-region ()
   "Activate last preview-region."
@@ -2494,38 +2829,38 @@ RADIUS range is [-1.0, 1.0]."
   "Drag image to view unshown part of the image."
   (interactive "e")
   (let ((gc-cons-threshold most-positive-fixnum) ; inhibit gc
-	(sx (event-glyph-x-pixel event))
-	(sy (event-glyph-y-pixel event))
-	(pw (Wand:image-width preview-wand))
-	(ph (Wand:image-height preview-wand))
-	(mouse-down t))
+        (sx (event-glyph-x-pixel event))
+        (sy (event-glyph-y-pixel event))
+        (pw (Wand:image-width preview-wand))
+        (ph (Wand:image-height preview-wand))
+        (mouse-down t))
     (while mouse-down
       (setq event (next-event event))
       (if (or (motion-event-p event) (button-release-event-p event))
-	  (let ((off-x (+ (- sx (event-glyph-x-pixel event))
-			  (or (get preview-wand 'offset-x) 0)))
-		(off-y (+ (- sy (event-glyph-y-pixel event))
-			  (or (get preview-wand 'offset-y) 0))))
-	    (when (< off-x 0) (setq off-x 0))
-	    (when (< off-y 0) (setq off-y 0))
-	    (Wand-mode-update-file-info)
-	    (if (motion-event-p event)
-		(set-extent-end-glyph
-		 preview-extent (Wand:glyph-internal
-				 preview-wand off-x off-y
-				 (- pw off-x) (- ph off-y)))
+          (let ((off-x (+ (- sx (event-glyph-x-pixel event))
+                          (or (car preview-offset) 0)))
+                (off-y (+ (- sy (event-glyph-y-pixel event))
+                          (or (cdr preview-offset) 0))))
+            (when (< off-x 0) (setq off-x 0))
+            (when (< off-y 0) (setq off-y 0))
+            (Wand-mode-update-file-info)
+            (if (motion-event-p event)
+                (set-extent-end-glyph
+                 preview-extent (Wand:glyph-internal
+                                 preview-wand off-x off-y
+                                 (- pw off-x) (- ph off-y)))
 
-	      ;; Button released
-	      (setq mouse-down nil)
-	      (put preview-wand 'offset-x off-x)
-	      (put preview-wand 'offset-y off-y)))
+              ;; Button released
+              (setq mouse-down nil)
+              (setq preview-offset (cons off-x off-y))))
 
-	(dispatch-event event)))))
+        (dispatch-event event)))))
 
 (defun wand-crop (region)
   "Crop image to selected region."
   (interactive (list (wand--image-region)))
-  (wand--operation-apply 'crop image-wand region)
+  (wand--operation-apply image-wand nil
+                         'crop region)
   (setq preview-region nil)
   (wand--redisplay))
 (put 'wand-crop 'region-operation t)
@@ -2534,7 +2869,8 @@ RADIUS range is [-1.0, 1.0]."
 (defun wand-chop (region)
   "Chop region from the image."
   (interactive (list (wand--image-region)))
-  (wand--operation-apply 'chop image-wand region)
+  (wand--operation-apply image-wand nil
+                         'chop region)
   (setq preview-region nil)
   (wand--redisplay))
 (put 'wand-chop 'region-operation t)
@@ -2544,7 +2880,8 @@ RADIUS range is [-1.0, 1.0]."
   "Remove red from the selected region."
   (interactive (list (wand--image-region)))
   (let ((gc-cons-threshold most-positive-fixnum)) ; inhibit gc
-    (wand--operation-apply 'redeye-remove image-wand region)
+    (wand--operation-apply image-wand nil
+                           'redeye-remove region)
     (setq preview-region nil)
     (wand--redisplay)))
 (put 'wand-redeye-remove 'region-operation t)
@@ -2559,27 +2896,31 @@ RADIUS range is [-1.0, 1.0]."
   (interactive
    (list (read-number "Zoom by factor: " wand-zoom-factor)))
 
-  (wand--operation-apply 'zoom image-wand factor)
+  (wand--operation-apply image-wand nil
+                         'zoom factor)
   (wand--redisplay))
 (put 'wand-zoom 'transform-operation t)
 (put 'wand-zoom 'menu-name "Zoom")
 
-(defun wand-zoom-in ()
+(defun wand-zoom-in (arg)
   "Zoom image in by `wand-zoom-factor' factor."
-  (interactive)
-  (wand-zoom wand-zoom-factor))
+  (interactive "P")
+  (wand-zoom (or (and arg (prefix-numeric-value arg))
+                 wand-zoom-factor)))
 
-(defun wand-zoom-out ()
+(defun wand-zoom-out (arg)
   "Zoom image out by `wand-zoom-factor'."
-  (interactive)
-  (wand-zoom (- wand-zoom-factor)))
+  (interactive "P")
+  (wand-zoom (- (or (and arg (prefix-numeric-value arg))
+                    wand-zoom-factor))))
 
 (defun wand-scale (w h)
   "Scale image to WxH."
   (interactive
    (list (read-number "Width: " (Wand:image-width image-wand))
          (read-number "Height: " (Wand:image-height image-wand))))
-  (wand--operation-apply 'scale image-wand w h)
+  (wand--operation-apply image-wand nil
+                         'scale w h)
   (wand--redisplay))
 (put 'wand-scale 'transform-operation t)
 (put 'wand-scale 'menu-name "Scale")
@@ -2589,7 +2930,8 @@ RADIUS range is [-1.0, 1.0]."
   (interactive
    (list (read-number "Width: " (Wand:image-width image-wand))
          (read-number "Height: " (Wand:image-height image-wand))))
-  (wand--operation-apply 'sample image-wand w h)
+  (wand--operation-apply image-wand nil
+                         'sample w h)
   (wand--redisplay))
 (put 'wand-sample 'transform-operation t)
 (put 'wand-sample 'menu-name "Sample")
@@ -2602,7 +2944,8 @@ RADIUS range is [-1.0, 1.0]."
                         (/ (float dw) (Wand:image-width image-wand))))))
      (list dw (read-number "Height: " dh))))
 
-  (wand--operation-apply 'fit-size image-wand w h)
+  (wand--operation-apply image-wand nil
+                         'fit-size w h)
   (wand--redisplay))
 (put 'wand-fit-size 'transform-operation t)
 (put 'wand-fit-size 'menu-name "Fit to size")
@@ -2613,7 +2956,8 @@ RADIUS range is [-1.0, 1.0]."
    (list (read-number "Width: " (Wand:image-width image-wand))
          (read-number "Height: " (Wand:image-height image-wand))))
 
-  (wand--operation-apply 'liquid-rescale image-wand w h)
+  (wand--operation-apply image-wand nil
+                         'liquid-rescale w h)
   (wand--redisplay))
 (put 'wand-liquid-rescale 'transform-operation t)
 (put 'wand-liquid-rescale 'menu-name "Liquid rescale")
@@ -2623,7 +2967,8 @@ RADIUS range is [-1.0, 1.0]."
 Levels is a  number of color levels allowed in each channel.
 2, 3, or 4 have the most visible effect."
   (interactive "nLevel: \nP")
-  (wand--operation-apply 'posterize image-wand levels (not (not ditherp)))
+  (wand--operation-apply image-wand preview-region
+                         'posterize levels (not (not ditherp)))
   (wand--redisplay))
 (put 'wand-posterize 'transform-operation t)
 (put 'wand-posterize 'menu-name "Posterize")
@@ -2633,7 +2978,8 @@ Levels is a  number of color levels allowed in each channel.
 LEVEL is a positive float.
 LEVEL value of 1.00 (read 100%) is no-op."
   (interactive "nLevel: ")
-  (wand--operation-apply 'gamma image-wand level)
+  (wand--operation-apply image-wand preview-region
+                         'gamma level)
   (wand--redisplay))
 (put 'wand-gamma 'transform-operation t)
 (put 'wand-gamma 'menu-name "Gamma")
@@ -2641,11 +2987,11 @@ LEVEL value of 1.00 (read 100%) is no-op."
 (defun wand-pattern (pattern &optional op)
   "Enable checkerboard as tile background."
   (interactive (list (completing-read "Pattern: " wand--patterns nil t)
-                     (if current-prefix-arg
-                         (completing-read "Composite Op: "
-                                          WandCompositeOperators nil t)
-                       wand-pattern-composite-op)))
-  (wand--operation-apply 'pattern image-wand pattern op)
+                     (completing-read "Composite Op: "
+                                      WandCompositeOperators nil t
+                                      nil nil wand-pattern-composite-op)))
+  (wand--operation-apply image-wand preview-region
+                         'pattern pattern op)
   (wand--redisplay))
 (put 'wand-pattern 'transform-operation t)
 (put 'wand-pattern 'menu-name "Pattern")
@@ -2672,34 +3018,33 @@ A-la `list-colors-display'."
 
       (Wand-with-wand w-out
         (setf (Wand:image-size w-out)
-              (cons 80 (face-height 'default)))
-        (Wand:MagickReadImage w-out "pattern:horizontal")
+              (cons 80 (line-pixel-height)))
+        (Wand:read-image-data w-out "pattern:horizontal")
         (Wand:MagickDrawImage w-out d-out)
 
         (cl-flet ((draw-in-out (cop)
                     (Wand-with-wand w-in
                       (setf (Wand:image-size w-in)
-                            (cons 80 (face-height 'default)))
-                      (Wand:MagickReadImage w-in "pattern:vertical")
+                            (cons 80 (line-pixel-height)))
+                      (Wand:read-image-data w-in "pattern:vertical")
                       (Wand:MagickDrawImage w-in d-in)
                       (Wand:image-composite w-in w-out (cdr cop) 0 0)
-                      (Wand:insert-emacs-image (Wand:emacs-image w-in))
+                      (Wand:emacs-insert w-in)
                       (insert " " (car cop) "\n"))))
           (with-output-to-temp-buffer "*Wand-Composite-Ops*"
             (set-buffer standard-output)
             (mapc #'draw-in-out WandCompositeOperators)))))))
 
-(defvar wand--patterns
-  (mapcar (lambda (x) (list (symbol-name x)))
-         '(bricks checkerboard circles crosshatch crosshatch30 crosshatch45
-           fishscales gray0 gray5 gray10 gray15 gray20 gray25 gray30
-           gray35 gray40 gray45 gray50 gray55 gray60 gray65 gray70
-           gray75 gray80 gray85 gray90 gray95 gray100 hexagons horizontal
-           horizontalsaw hs_bdiagonal hs_cross
-           hs_diagcross hs_fdiagonal hs_horizontal hs_vertical left30
-           left45 leftshingle octagons right30 right45 rightshingle
-           smallfishscales vertical verticalbricks
-           verticalleftshingle verticalrightshingle verticalsaw)))
+(defconst wand--patterns
+  '(("bricks") ("checkerboard") ("circles") ("crosshatch") ("crosshatch30")
+    ("crosshatch45") ("fishscales") ("gray0") ("gray5") ("gray10") ("gray15")
+    ("gray20") ("gray25") ("gray30") ("gray35") ("gray40") ("gray45") ("gray50")
+    ("gray55") ("gray60") ("gray65") ("gray70") ("gray75") ("gray80") ("gray85")
+    ("gray90") ("gray95") ("gray100") ("hexagons") ("horizontal") ("horizontalsaw")
+    ("hs_bdiagonal") ("hs_cross") ("hs_diagcross") ("hs_fdiagonal") ("hs_horizontal")
+    ("hs_vertical") ("left30") ("left45") ("leftshingle") ("octagons") ("right30")
+    ("right45") ("rightshingle") ("smallfishscales") ("vertical") ("verticalbricks")
+    ("verticalleftshingle") ("verticalrightshingle") ("verticalsaw")))
 
 (defun wand-list-patterns ()
   "Show available patterns in separate buffer.
@@ -2707,12 +3052,11 @@ A-la `list-colors-display'."
   (interactive)
   (with-output-to-temp-buffer "*Wand-Patterns*"
     (cl-flet ((draw-pattern (pat-name)
-                (Wand:insert-emacs-image
-                 (Wand-with-wand wand
+                (Wand-with-wand wand
                    (setf (Wand:image-size wand)
                          (cons 80 (line-pixel-height)))
                    (Wand:read-image-data wand (concat "pattern:" pat-name))
-                   (Wand:emacs-image wand)))
+                   (Wand:emacs-insert wand))
                 (insert " " pat-name "\n")))
       (save-excursion
         (set-buffer standard-output)
@@ -2757,7 +3101,7 @@ A-la `list-colors-display'."
   (dotimes (n arg)
     (let ((op (pop undo-list)))
       (when op
-        (apply #'wand--operation-apply (car op) image-wand (cdr op)))))
+        (apply #'wand--operation-apply image-wand nil (car op) (cdr op)))))
   (wand--redisplay)
   (message "Redo!"))
 
@@ -2788,7 +3132,7 @@ A-la `list-colors-display'."
   (let ((last-op (car (last operations-list))))
     (when last-op
       (apply #'wand--operation-apply
-             (car last-op) image-wand (cdr last-op))
+             image-wand nil (car last-op) (cdr last-op))
       (wand--redisplay))))
 
 (defun wand-global-operations-list (arg)
@@ -2807,7 +3151,7 @@ example zoom."
    (let* ((ofmt (completing-read
                  (format "Output Format [%s]: "
                          (Wand:image-format image-wand))
-                 (mapcar #'list (Wand-formats-list "*" 'write))
+                 (mapcar #'list (wand-formats-list "*" 'write))
                  nil t nil nil (Wand:image-format image-wand)))
           (nfname (concat (file-name-sans-extension buffer-file-name)
                           "." (downcase ofmt)))
@@ -2817,7 +3161,7 @@ example zoom."
                nfname nil (file-name-nondirectory nfname))))
      (list ofmt fn)))
 
-  (unless (Wand-format-supported-for-write-p format)
+  (unless (wand-format-can-write-p format)
     (error "Unsupported format for writing: %s" format))
 
   (when (or (not wand-query-for-overwrite)
@@ -2828,7 +3172,7 @@ example zoom."
     (message "File %s saved" nfile)
 
     ;; Redisplay in case we can do it
-    (if (Wand-format-supported-for-read-p format)
+    (if (wand-format-can-read-p format)
         (wand-display nfile)
       (find-file nfile))))
 

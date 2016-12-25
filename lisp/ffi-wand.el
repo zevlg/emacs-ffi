@@ -299,6 +299,7 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
   (string-to-number (Wand:get-magick-property wand "height")))
 
 ;;}}}
+
 ;;{{{  `-- Image profiles
 
 (defun Wand-fetch-relinquish-strings (strs slen)
@@ -601,8 +602,11 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 (define-ffi-function Wand:images-num "MagickGetNumberImages" :ulong
   (MagickWand) libmagickwand)
 
-(define-ffi-function Wand:has-next-image "MagickHasNextImage" MagickBooleanType
+(define-ffi-function Wand:HasNextImage "MagickHasNextImage" MagickBooleanType
   (MagickWand) libmagickwand)
+
+(defsubst Wand:has-next-image (w)
+  (= (Wand:HasNextImage w) 1))
 
 (define-ffi-function Wand:next-image "MagickNextImage" MagickBooleanType
   (MagickWand) libmagickwand)
@@ -778,16 +782,16 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   (DrawingWand :double :double WandPaintMethod) libmagickwand)
 
 (define-ffi-function Wand:DrawPolygon "DrawPolygon" :void
-  (DrawingWand :ulong PointInfo) libmagickwand)
+  ;; draw n-points (pointer PointInfo)
+  (DrawingWand :ulong :pointer) libmagickwand)
 
 (define-ffi-function Wand:DrawPolyline "DrawPolyline" :void
-  (DrawingWand :ulong PointInfo) libmagickwand)
+  ;; draw n-points (pointer PointInfo)
+  (DrawingWand :ulong :pointer) libmagickwand)
 
-(defmacro Wand-with-points (binding &rest body)
+(defmacro Wand-with-ffi-points (binding &rest body)
   (declare (indent defun))
-  (let ((npo (cl-gensym))
-        (poi (cl-gensym))
-        (offseter (cl-gensym)))
+  (let ((npo (cl-gensym)) (poi (cl-gensym)) (offseter (cl-gensym)))
     `(let (,offseter)
        (with-ffi-temporaries ((,poi PointInfo)
                               (,(car binding)
@@ -803,8 +807,8 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
          ,@body))))
 
 (defun Wand:draw-lines (dw points)
-  (Wand-with-points (pinfo points)
-    (Wand:DrawPolyline dw (length points) pinfo)))
+  (Wand-with-points (c-pinfo points)
+    (Wand:DrawPolyline dw (length points) c-pinfo)))
 
 (define-ffi-function Wand:DrawGetFillColor "DrawGetFillColor" :void
   (DrawingWand PixelWand) libmagickwand)
@@ -850,7 +854,7 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   (DrawingWand :double) libmagickwand)
 
 (defsetf Wand:draw-stroke-width (dw) (sw)
-  `(Wand:DrawSetStrokeWidth ,dw ,sw))
+  `(Wand:DrawSetStrokeWidth ,dw (float ,sw)))
 
 (define-ffi-function Wand:draw-stroke-opacity "DrawGetStrokeOpacity" :double
   (DrawingWand) libmagickwand)
@@ -1277,6 +1281,7 @@ effect to wipe hard contrasts."
    wand 0 0 (Wand:image-width wand) (Wand:image-height wand)))
 
 (cl-defun Wand:emacs-insert (wand &key (keymap nil) (offset nil)
+                                  (region nil)
                                   (pointer 'arrow))
   "Insert WAND into Emacs buffer."
   (let* ((x (or (car offset) 0))
@@ -1284,10 +1289,10 @@ effect to wipe hard contrasts."
          (w (- (Wand:image-width wand) x))
          (h (- (Wand:image-height wand) y))
          (image (Wand:emacs-image-internal wand x y w h))
-         (start (point)))
-    (insert " ")
+         (start (or (car region) (point))))
+    (unless region (insert " "))
     (set-text-properties
-     start (point)
+     start (or (cdr region) (point))
      (list 'display image 'keymap keymap 'pointer pointer))))
 
 (defun Wand:fit-size (wand max-width max-height &optional scaler force)
@@ -1328,7 +1333,7 @@ Return non-nil if fiting was performed."
 ;;}}}
 
 
-;;{{{ Custom variables for Wand-mode
+;;{{{ Custom variables for wand-mode
 
 (defgroup wand nil
   "Group to customize wand mode."
@@ -1465,12 +1470,12 @@ your own scaler with `Wand-make-scaler'."
     (define-key map (kbd "M-<") #'wand-first-image)
     (define-key map (kbd "M->") #'wand-last-image)
 
-    (define-key map [next] #'Wand-mode-next-page)
-    (define-key map [prior] #'Wand-mode-prev-page)
-    (define-key map [home] #'Wand-mode-first-page)
-    (define-key map [end] #'Wand-mode-last-page)
-    (define-key map [?g] #'Wand-mode-goto-page)
-    (define-key map [(meta ?g)] #'Wand-mode-goto-page)
+    (define-key map [next] #'wand-next-page)
+    (define-key map [prior] #'wand-prev-page)
+    (define-key map [home] #'wand-first-page)
+    (define-key map [end] #'wand-last-page)
+    (define-key map [?g] #'wand-goto-page)
+    (define-key map [(meta ?g)] #'wand-goto-page)
 
     ;; Region
     (define-key map [down-mouse-1] #'wand-select-region)
@@ -1478,8 +1483,8 @@ your own scaler with `Wand-make-scaler'."
 
     ;; General commands
     (define-key map [mouse-3] #'wand-popup-menu)
-    (define-key map (kbd "M-<mouse-1>") #'Wand-mode-drag-image)
-    (define-key map (kbd "C-<mouse-1>") #'Wand-mode-drag-image)
+    (define-key map [(meta mouse-1)] #'wand-drag-image)
+    (define-key map [(control mouse-1)] #'wand-drag-image)
     (define-key map "o" #'wand-operate)
     (define-key map "O" #'wand-global-operations-list)
     (define-key map "x" #'wand-toggle-fit)
@@ -1548,17 +1553,17 @@ your own scaler with `Wand-make-scaler'."
 
 (defun wand-menu-page-navigations (not-used)
   "Generate menu for page navigation."
-  (list ["Next Page" Wand-mode-next-page
+  (list ["Next Page" wand-next-page
          :active (Wand:has-next-image image-wand)]
-        ["Previous Page" Wand-mode-prev-page
+        ["Previous Page" wand-prev-page
          :active (Wand:has-prev-image image-wand)]
-        ["First Page" Wand-mode-first-page
+        ["First Page" wand-first-page
          :active (/= (Wand:iterator-index image-wand) 0) ]
-        ["Last Page" Wand-mode-last-page
+        ["Last Page" wand-last-page
          :active (/= (Wand:iterator-index image-wand)
                      (1- (Wand:images-num image-wand))) ]
         "-"
-        ["Goto Page" Wand-mode-goto-page
+        ["Goto Page" wand-goto-page
          :active (/= (Wand:images-num image-wand) 1)]))
 
 (defun wand-menu-region-operations (not-used)
@@ -1600,8 +1605,10 @@ ARGS specifies arguments to operation, first must always be wand."
        ,@body)))
 
 (define-wand-operation region (wand region op)
-  "Apply operation OP to REGION."
+  "Apply operation OP to REGION.
+Deactivates region."
   (let ((cwand (apply #'Wand:image-region wand region)))
+    (setq preview-region nil)
     (unwind-protect
         (prog1
           (apply (wand--operation-lookup (car op)) cwand (cdr op))
@@ -1933,7 +1940,7 @@ Return a new wand."
         ;; (insert "\n")
         ;; (widget-setup))
         (insert (format "Operations: %S" operations-list) "\n"))
-        ))
+        )
 
     ;; Info about pickup color
     (when (boundp 'pickup-color)
@@ -2297,6 +2304,54 @@ If REVERSE-ORDER is specified, then return previous file."
   "View very first image in the directory."
   (interactive)
   (wand-last-image t))
+
+;;}}}
+
+;;{{{ Pages navigation commands
+
+(defun wand-next-page ()
+  "Display next image in image chain."
+  (interactive)
+  (unless (Wand:has-next-image image-wand)
+    (error "No next image in chain"))
+  (Wand:next-image image-wand)
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
+
+(defun wand-prev-page ()
+  "Display previous image in image chain."
+  (interactive)
+  (unless (Wand:has-prev-image image-wand)
+    (error "No previous image in chain"))
+  (Wand:prev-image image-wand)
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
+
+(defun wand-first-page ()
+  "Display first image in image chain."
+  (interactive)
+  (Wand:set-first-iterator image-wand)
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
+
+(defun wand-last-page ()
+  "Display last image in image chain."
+  (interactive)
+  (Wand:set-last-iterator image-wand)
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
+
+(defun wand-goto-page (n)
+  "Display last image in image chain."
+  (interactive
+   (list (if (numberp current-prefix-arg)
+	     current-prefix-arg
+	   (read-number "Goto page: "))))
+  ;; Internally images in chain counts from 0
+  (unless (setf (Wand:iterator-index image-wand) (1- n))
+    (error "No such page" n))
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
 
 ;;}}}
 
@@ -2776,9 +2831,6 @@ elevation is measured in pixels above the Z axis."
 (defun wand-select-region (event)
   "Select region."
   (interactive "e")
-  (message "EVENT: %S / %S" (event-start event) (event-end event))
-  (setq eeend (event-end event))
-  (setq ssstr (event-start event))
   (let* ((gc-cons-threshold most-positive-fixnum) ; inhibit gc
          (s-xy (posn-object-x-y (event-start event)))
          (sx (car s-xy)) (sy (cdr s-xy))
@@ -2793,18 +2845,7 @@ elevation is measured in pixels above the Z axis."
                   (list (abs (- sx mx)) (abs (- sy my))
                         (min sx mx) (min sy my)))
             ;; Update info and preview image
-            (wand--update-file-info)
-            ;; (let ((pwr (wand--preview-with-region)))
-            ;;   (unwind-protect
-            ;;       (let ((inhibit-read-only t)
-            ;;             before-change-functions
-            ;;             after-change-functions)
-            ;;         (delete-region (1- (point-max)) (point-max))
-            ;;         (Wand:emacs-insert pwr :keymap wand-mode-map
-            ;;                            :offset preview-offset))
-            ;;     (Wand:delete-wand pwr)))
-            )))
-      )
+            (wand--redisplay)))))
 
     (if (and (> (nth 0 preview-region) 0)
              (> (nth 1 preview-region) 0))
@@ -2836,19 +2877,17 @@ elevation is measured in pixels above the Z axis."
         (mouse-down t))
     (while mouse-down
       (setq event (next-event event))
-      (if (or (motion-event-p event) (button-release-event-p event))
+      (if (or (wand--motion-event-p event)
+              (wand--mouse-release-p event))
           (let ((off-x (+ (- sx (event-glyph-x-pixel event))
                           (or (car preview-offset) 0)))
                 (off-y (+ (- sy (event-glyph-y-pixel event))
                           (or (cdr preview-offset) 0))))
             (when (< off-x 0) (setq off-x 0))
             (when (< off-y 0) (setq off-y 0))
-            (Wand-mode-update-file-info)
-            (if (motion-event-p event)
-                (set-extent-end-glyph
-                 preview-extent (Wand:glyph-internal
-                                 preview-wand off-x off-y
-                                 (- pw off-x) (- ph off-y)))
+            (wand--update-file-info)
+            (if (wand--motion-event-p event)
+                (wand--redisplay)
 
               ;; Button released
               (setq mouse-down nil)

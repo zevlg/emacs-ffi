@@ -300,7 +300,7 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
 
 ;;}}}
 
-;;{{{  `-- Image profiles
+;;{{{  `-- Image properties
 
 (defun Wand-fetch-relinquish-strings (strs slen)
   "Fetch strings from strings array STRS of length SLEN."
@@ -309,89 +309,6 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
         (loop for off from 0 below slen
               collect (ffi-get-c-string (ffi-aref strs :pointer off)))
       (Wand:RelinquishMemory strs))))
-
-;; Profiles
-(define-ffi-function Wand:MagickGetImageProfiles "MagickGetImageProfiles" :pointer
-  (MagickWand :pointer :pointer) libmagickwand)
-
-(defun Wand:image-profiles (wand pattern)
-  "Get list of WAND's profiles matching PATTERN."
-  (with-ffi-temporary (clen :ulong)
-    (with-ffi-string (cptr pattern)
-      (let ((profs (Wand:MagickGetImageProfiles wand cptr clen)))
-        (Wand-fetch-relinquish-strings profs (ffi--mem-ref clen :ulong))))))
-
-(define-ffi-function Wand:MagickGetImageProfile "MagickGetImageProfile" :pointer
-  (MagickWand :pointer :pointer) libmagickwand)
-
-(define-ffi-function Wand:MagickSetImageProfile "MagickSetImageProfile"
-  MagickBooleanType
-  (MagickWand :pointer :pointer :uint) libmagickwand)
-
-(define-ffi-function Wand:MagickRemoveImageProfile "MagickRemoveImageProfile" :pointer
-  (MagickWand :pointer :pointer) libmagickwand)
-
-(defconst wand--iptc-names-table
-  '((120 . caption) (25 . keyword)))
-
-(defun Wand:image-profile-iptc (wand)
-  "Fetch IPTC profile from WAND in lisp-friendly form."
-  (with-ffi-temporary (cplen :uint)
-    (with-ffi-string (ciptc "iptc")
-      (let ((prof (Wand:MagickGetImageProfile wand ciptc cplen))
-            (rlen (ffi--mem-ref cplen :uint)) (coff 0) (rv nil))
-    (unless (ffi-pointer-null-p prof)
-      (unwind-protect
-          (cl-flet ((getbyte () (prog1
-                                    (ffi-aref prof :char coff)
-                                  (incf coff))))
-            ;; 28 - must start any iptc header
-            (while (and (< coff rlen) (= (getbyte) 28))
-              (let* ((itype (getbyte)) (idset (getbyte))
-                     (l1 (getbyte)) (l2 (getbyte))
-                     (ln (logior (ash l1 8) l2)))
-                (when (= itype 2)
-                  ;; only string type supported
-                  (push (cons (cdr (assq idset wand--iptc-names-table))
-                              (ffi-get-c-data (ffi-pointer+ prof coff) ln))
-                        rv))
-                (incf coff ln)))
-            rv)
-        (Wand:RelinquishMemory prof)))))))
-
-(defun Wand:image-save-iptc-profile (w iptc)
-  "For wand W store IPTC profile."
-  ;; TODO
-  (let ((oolen (reduce #'(lambda (e1 e2)
-                           (+ e1 5 (length (cdr e2))))
-                       iptc :initial-value 0)))
-    (when (> oolen 0)
-      (let ((prof (make-ffi-object 'pointer oolen))
-            (coff 0))
-        (cl-flet ((savebyte (byte)
-                    (prog1
-                        (ffi-store prof coff 'byte byte)
-                      (incf coff))))
-          (loop for ipel in iptc do
-            (savebyte 28) (savebyte 2)
-            (savebyte (car (find (car ipel)
-                                 wand--iptc-names-table :key #'cdr)))
-            (let* ((ln (length (cdr ipel)))
-                   (l1 (ash (logand ln #xff00) -8))
-                   (l2 (logand ln #x00ff)))
-              (savebyte l1) (savebyte l2)
-              (ffi-store prof coff 'c-string (cdr ipel))
-              (incf coff ln))))
-        (Wand:MagickSetImageProfile w "iptc" prof oolen)))
-    ))
-
-(defun Wand:image-remove-profile (wand profname)
-  (with-ffi-temporary (cplen :uint)
-    (with-ffi-string (cpfname profname)
-      (Wand:MagickRemoveImageProfile wand cpfname cplen))))
-
-;;}}}
-;;{{{  `-- Image properties
 
 (define-ffi-function Wand:MagickGetImageProperties "MagickGetImageProperties" :pointer
   (MagickWand :pointer :pointer) libmagickwand)
@@ -807,7 +724,7 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
          ,@body))))
 
 (defun Wand:draw-lines (dw points)
-  (Wand-with-points (c-pinfo points)
+  (Wand-with-ffi-points (c-pinfo points)
     (Wand:DrawPolyline dw (length points) c-pinfo)))
 
 (define-ffi-function Wand:DrawGetFillColor "DrawGetFillColor" :void
@@ -1290,10 +1207,12 @@ effect to wipe hard contrasts."
          (h (- (Wand:image-height wand) y))
          (image (Wand:emacs-image-internal wand x y w h))
          (start (or (car region) (point))))
-    (unless region (insert " "))
-    (set-text-properties
-     start (or (cdr region) (point))
-     (list 'display image 'keymap keymap 'pointer pointer))))
+    (unless region (widget-insert " "))
+    (let ((inhibit-read-only t)
+          (inhibit-modification-hooks t))
+      (set-text-properties
+       start (or (cdr region) (point))
+       (list 'display image 'keymap keymap 'pointer pointer)))))
 
 (defun Wand:fit-size (wand max-width max-height &optional scaler force)
   "Fit WAND image into MAX-WIDTH and MAX-HEIGHT.
@@ -1394,11 +1313,6 @@ The standard deviation of the Gaussian, in pixels"
   :type 'boolean
   :group 'wand)
 
-(defcustom wand-show-iptc-info t
-  "*Non-nil to display IPTC info if any."
-  :type 'boolean
-  :group 'wand)
-
 (defcustom wand-show-operations t
   "Non-nil to show operations done on file."
   :type 'boolean
@@ -1492,7 +1406,6 @@ your own scaler with `Wand-make-scaler'."
     (define-key map "e" #'wand-prop-editor)
     (define-key map "q" #'wand-quit)
     (define-key map (kbd "C-r") #'wand-reload)
-    (define-key map "p" #'wand-iptc-add-tag)
 
     ;; Zooming
     (define-key map "+" #'wand-zoom-in)
@@ -1843,127 +1756,58 @@ Return a new wand."
                        (wand--image-region))
               ""))))
 
-(defun wand--iptc-split-keywords (tag-value)
-  (mapcar #'(lambda (kw) (cons 'keyword kw))
-          (nreverse
-           (split-string tag-value "\\(, \\|,\\)"))))
+(defun wand--operations-action (wid &rest args)
+  (wand-edit-operations
+   (car (read-from-string (widget-value wid)))))
 
-(defun wand--iptc-from-widgets (widgets)
-  "Return profile made up from WIDGETS info."
-  (mapcan
-   #'(lambda (widget)
-       (let ((iptc-tag (widget-get widget :iptc-tag))
-             (tag-value (widget-get widget :value)))
-         (cond ((string= tag-value "") nil)
-               ((eq iptc-tag 'keywords)
-                ;; Special case for keywords
-                (wand--iptc-split-keywords tag-value))
-               (t (list (cons iptc-tag tag-value))))))
-   widgets))
+(defun wand--insert-operations ()
+  (when wand-global-operations-list
+    (widget-insert (format "Global operations: %S"
+                           wand-global-operations-list) "\n"))
 
-(defun wand--iptc-notify (wid &rest args)
-  "Called when some IPTC info changed."
-  (Wand:image-save-iptc-profile
-   image-wand (wand--iptc-from-widgets (cons wid widget-field-list)))
-  (wand--update-info))
+  (when operations-list
+    (widget-create 'editable-field
+                   :format "Operations: %v"
+                   :size 40
+                   :action #'wand--operations-action
+                   (prin1-to-string operations-list))
+    (widget-insert "\n")))
 
-(defun wand--insert-iptc-tags ()
-  "Insert iptc tags info."
-  (kill-local-variable 'widget-global-map)
-  (kill-local-variable 'widget-field-new)
-  (kill-local-variable 'widget-field-last)
-  (kill-local-variable 'widget-field-was)
-  (kill-local-variable 'widget-field-list)
-
-  (let* ((iptc (Wand:image-profile-iptc image-wand))
-         (cpt (cdr (assq 'caption iptc)))
-         (kws (mapcar #'cdr (remove-if-not
-                             #'(lambda (e) (eq 'keyword (car e)))
-                             iptc))))
-    (when cpt
-      (widget-create 'editable-field
-                     :tag "Caption"
-                     :format "IPTC Caption: %v"
-                     :iptc-tag 'caption
-                     :notify #'wand--iptc-notify
-                     cpt))
-    (when kws
-      (widget-create 'editable-field
-                     :format "IPTC Keywords: %v"
-                     :tag "Keywords"
-                     :iptc-tag 'keywords
-                     :notify #'wand--iptc-notify
-                     (mapconcat #'identity kws ", ")))
-    (widget-setup)))
-
-(defun wand-iptc-add-tag (tag value)
-  "Add TAG to ITPC profile."
-  (interactive (list (completing-read
-                      "IPTC Tag: " '(("caption") ("keywords")) nil t)
-                     (read-string "ITPC Tag value: ")))
-  (let ((tags-val (cond ((string= tag "caption")
-                         (list (cons 'caption value)))
-                        ((string= tag "keywords")
-                         (wand--iptc-split-keywords value))
-                        (t (error "Invalid IPTC tag")))))
-    (Wand:image-save-iptc-profile
-     image-wand (nconc (wand--iptc-from-widgets widget-field-list)
-                       tags-val))
-    (wand--update-info)))
+(defun wand--color-info ()
+  (declare (special pickup-color))
+  (let* ((cf (make-face (gensym "dcolor-")))
+         (place (car pickup-color))
+         (color (cdr pickup-color))
+         (fcol (apply #'format "#%02x%02x%02x" color))
+         (spaces "      "))
+    (set-face-background cf fcol)
+    (add-face-text-property 0 (length spaces) cf nil spaces)
+    (concat
+     (format "Color: +%d+%d " (car place) (cdr place))
+     spaces
+     (format " %s R:%d, G:%d, B:%d" fcol
+             (car color) (cadr color) (caddr color)))))
 
 (defun wand--insert-info ()
   "Insert some file informations."
   (when wand-show-fileinfo
-    (insert (wand--file-info) "\n"))
-  (when wand-show-iptc-info
-    (wand--insert-iptc-tags))
+    (widget-insert (wand--file-info) "\n"))
+  (when wand-show-operations
+    (wand--insert-operations))
 
-  ;; XXX iptc may set those below again
-  (let ((inhibit-read-only t)
-        (before-change-functions nil)
-        (after-change-functions nil))
+  ;; Info about pickup color
+  (when (boundp 'pickup-color)
+    (widget-insert (wand--color-info) "\n"))
 
-    (when wand-show-operations
-      (when wand-global-operations-list
-        (insert (format "Global operations: %S"
-                        wand-global-operations-list) "\n"))
+  (widget-setup)
+  (use-local-map wand-mode-map)
 
-      ;; TODO: some kind of widget, so operations can be edited
-      ;; inplace
-      (when operations-list
-        ;; (widget-create 'editable-field
-        ;;                :size 20
-        ;;                ;; bad name ..
-        ;;                :action #'wand-operations-apply-string
-        ;;                :format "Operations: %v"
-        ;;                (format "%S" operations-list))
-        ;; (insert "\n")
-        ;; (widget-setup))
-        (insert (format "Operations: %S" operations-list) "\n"))
-        )
-
-    ;; Info about pickup color
-    (when (boundp 'pickup-color)
-      (declare (special pickup-color))
-      (let* ((cf (make-face (gensym "dcolor-")))
-             (place (car pickup-color))
-             (color (cdr pickup-color))
-             (fcol (apply #'format "#%02x%02x%02x" color)))
-        (set-face-background cf fcol)
-        (insert (format "Color: +%d+%d " (car place) (cdr place)))
-        (let ((spaces "      "))
-          (add-face-text-property 0 (length spaces) cf nil spaces)
-          (insert spaces))
-        (insert (format " %s R:%d, G:%d, B:%d\n" fcol
-                        (car color) (cadr color) (caddr color)))))
-
-    (run-hooks 'wand-info-hook)))
+  (run-hooks 'wand-info-hook))
 
 (defun wand--update-info ()
   "Only update info region."
   (let ((inhibit-read-only t)
-        before-change-functions
-        after-change-functions)
+        (inhibit-modification-hooks t))
     (mapc #'widget-delete widget-field-list)
     (save-excursion
       (goto-char (point-min))
@@ -1983,7 +1827,7 @@ Return a new wand."
       (save-excursion
         (goto-char (point-min))
         (delete-region (point-at-bol) (point-at-eol))
-        (insert (wand--file-info))))
+        (widget-insert (wand--file-info))))
     (set-buffer-modified-p nil)))
 
 (defun wand--preview-with-region ()
@@ -2063,10 +1907,13 @@ Return a new wand."
         before-change-functions
         after-change-functions)
     (erase-buffer)
-    (wand--insert-info)
-    (wand--insert-preview)
-    (goto-char (point-min)))
-  (set-buffer-modified-p nil))
+    (mapc #'widget-delete widget-field-list))
+
+  (wand--insert-info)
+  (wand--insert-preview)
+  (widget-setup)
+
+  (use-local-map wand-mode-map))
 
 ;;;###autoload
 (defun wand-display-noselect (file)
@@ -2099,7 +1946,7 @@ Return a new wand."
         (use-local-map wand-mode-map)
         (setq mode-name "wand")
         (setq major-mode 'wand-mode)
-        (setq buffer-read-only t)
+;        (setq buffer-read-only t)
         ;; Setup menubar
         (add-submenu '() wand-menu)
         (add-hook 'kill-buffer-hook 'wand--cleanup))
@@ -2345,8 +2192,8 @@ If REVERSE-ORDER is specified, then return previous file."
   "Display last image in image chain."
   (interactive
    (list (if (numberp current-prefix-arg)
-	     current-prefix-arg
-	   (read-number "Goto page: "))))
+             current-prefix-arg
+           (read-number "Goto page: "))))
   ;; Internally images in chain counts from 0
   (unless (setf (Wand:iterator-index image-wand) (1- n))
     (error "No such page" n))
@@ -2885,13 +2732,13 @@ elevation is measured in pixels above the Z axis."
                           (or (cdr preview-offset) 0))))
             (when (< off-x 0) (setq off-x 0))
             (when (< off-y 0) (setq off-y 0))
-            (wand--update-file-info)
             (if (wand--motion-event-p event)
                 (wand--redisplay)
 
               ;; Button released
               (setq mouse-down nil)
-              (setq preview-offset (cons off-x off-y))))
+              (setq preview-offset (cons off-x off-y))
+              (wand--redisplay)))
 
         (dispatch-event event)))))
 
@@ -3122,14 +2969,7 @@ A-la `list-colors-display'."
     (push (car (last operations-list)) undo-list)
     (setq operations-list (butlast operations-list)))
 
-  ;; Update wand keeping current page
-  (let ((page (Wand:iterator-index image-wand)))
-    (Wand:clear-wand image-wand)
-    (Wand:read-image image-wand buffer-file-name)
-    (setf (Wand:iterator-index image-wand) page))
-
-  (wand--operation-list-apply image-wand)
-  (wand--redisplay)
+  (wand-edit-operations operations-list)
   (message "Undo!"))
 
 (defun wand-redo (&optional arg)
@@ -3144,26 +2984,27 @@ A-la `list-colors-display'."
   (wand--redisplay)
   (message "Redo!"))
 
-(defun wand-edit-operations ()
+(defun wand-edit-operations (new-oplist)
   "Edit and reapply operations list."
-  (interactive)
-  (let* ((print-level nil)
-         (ops-as-string (if operations-list
-                            (prin1-to-string operations-list)
-                          ""))
-         (new-oplist (read-from-minibuffer
-                      "Operations: " ops-as-string read-expression-map
-                      t ops-as-string)))
+  (interactive
+   (let* ((print-level nil)
+          (ops-as-string (if operations-list
+                             (prin1-to-string operations-list)
+                           ""))
+          (new-oplist (read-from-minibuffer
+                       "Operations: " ops-as-string read-expression-map
+                       t ops-as-string)))
+     (list new-oplist)))
 
-    ;; Cut&Paste from undo
-    (let ((page (Wand:iterator-index image-wand)))
-      (Wand:clear-wand image-wand)
-      (Wand:read-image image-wand buffer-file-name)
-      (setf (Wand:iterator-index image-wand) page))
+  ;; Cut&Paste from undo
+  (let ((page (Wand:iterator-index image-wand)))
+    (Wand:clear-wand image-wand)
+    (Wand:read-image image-wand buffer-file-name)
+    (setf (Wand:iterator-index image-wand) page))
 
-    (setq operations-list new-oplist)
-    (wand--operation-list-apply image-wand)
-    (wand--redisplay)))
+  (setq operations-list new-oplist)
+  (wand--operation-list-apply image-wand)
+  (wand--redisplay))
 
 (defun wand-repeat-last-operation ()
   "Repeat last operation on image."

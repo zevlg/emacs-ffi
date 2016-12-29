@@ -32,24 +32,23 @@
 
 (define-ffi-library libmagickwand "libMagickWand")
 
-(define-ffi-array MagickArray4096 :char 4096)
+(define-ffi-array Wand-Array4096Type :char 4096)
 
-(defvar MagickBooleanType :long)
+(defvar Wand-BooleanType :long)
 
-(define-ffi-struct MagickWand-private
+(define-ffi-struct Wand-PrivateType
   (id :type :ulong)
-  (name :type MagickArray4096)
+  (name :type Wand-Array4096Type)
   (exception :type :pointer)
   (image-info :type :pointer)           ; ImageInfo*
   (quantize-info :type :pointer)
   (images :type :pointer)
-  (active :type MagickBooleanType)
-  (pend :type MagickBooleanType)
-  (debug :type MagickBooleanType)
+  (active :type Wand-BooleanType)
+  (pend :type Wand-BooleanType)
+  (debug :type Wand-BooleanType)
   (signature :type :ulong))
 
-(defconst MagickStatusType :uint)
-(define-ffi-struct MagickInfo
+(define-ffi-struct Wand-InfoType
   (name :type :pointer)
   (description :type :pointer)
   (version :type :pointer)
@@ -63,13 +62,13 @@
   (magick :type :pointer)                      ; IsImageFormatHandler
   (client-date :type :pointer)
 
-  (adjoin :type MagickBooleanType)
-  (raw :type MagickBooleanType)
-  (endian-support :type MagickBooleanType)
-  (blob-support :type MagickBooleanType)
-  (seekable-stream :type MagickBooleanType)
-  (thread-support :type MagickStatusType)
-  (stealth :type MagickBooleanType)
+  (adjoin :type Wand-BooleanType)
+  (raw :type Wand-BooleanType)
+  (endian-support :type Wand-BooleanType)
+  (blob-support :type Wand-BooleanType)
+  (seekable-stream :type Wand-BooleanType)
+  (thread-support :type :uint)
+  (stealth :type Wand-BooleanType)
 
   ;; deprecated, use GetMagickInfoList()
   (previous :type :pointer)
@@ -77,31 +76,32 @@
 
   (signature :type :ulong))
 
-(defconst MagickExceptionType :int)
-(define-ffi-struct MagickExceptionInfo
-  (severity :type MagickExceptionType)
+(defconst Wand-ExceptionType :int)
+(define-ffi-struct Wand-ExceptionInfoType
+  (severity :type Wand-ExceptionType)
   (error_number :type :int)
   (reason :type :pointer)
   (description :type :pointer)
   (exceptions :type :pointer)
-  (relinquish :type MagickBooleanType)
+  (relinquish :type Wand-BooleanType)
   (semaphore :type :pointer)
   (signature :type :ulong))
 
-(define-ffi-struct PointInfo
+(define-ffi-struct Wand-PointInfoType
   (x :type :double)
   (y :type :double))
 
-(defvar MagickOrientationType :int)
-(defconst MagickOrientationUndefined 0)
-(defconst MagickOrientationTopLeft 1)
-(defconst MagickOrientationTopRight 2)
-(defconst MagickOrientationBottomRight 3)
-(defconst MagickOrientationBottomLeft 4)
-(defconst MagickOrientationLeftTop 5)
-(defconst MagickOrientationRightTop 6)
-(defconst MagickOrientationRightBottom 7)
-(defconst MagickOrientationLeftBottom 8)
+(defconst Wand-OrientationType :int)
+(defmacro Wand-Orientation-get (kw)
+  (ecase kw
+    ((:topleft :top-left) 1)
+    ((:topright :top-right) 2)
+    ((:bottomright :bottom-right) 3)
+    ((:bottomleft :bottom-left) 4)
+    ((:lefttop :left-top) 5)
+    ((:righttop :right-top) 6)
+    ((:rightbottom :right-bottom) 7)
+    ((:leftbottom :left-bottom) 8)))
 
 (define-ffi-function Wand:MagickWandGenesis "MagickWandGenesis" :void
   nil libmagickwand)
@@ -128,7 +128,7 @@
 (define-ffi-function Wand:RelinquishMemory "MagickRelinquishMemory" :pointer
   (:pointer) libmagickwand)
 
-(defconst MagickWand :pointer)
+(defconst Wand-WandType :pointer)
 
 (define-ffi-function Wand:acquire-id "AcquireWandId" :size_t
   nil libmagickwand)
@@ -137,33 +137,33 @@
   (:size_t) libmagickwand)
 
 ;; Return a newly allocated MagickWand.
-(define-ffi-function Wand:make-wand "NewMagickWand" MagickWand
+(define-ffi-function Wand:make-wand "NewMagickWand" Wand-WandType
   nil libmagickwand)
 
 ;; Clear all resources associated with the WAND.
 ;; This does not free the memory, i.e. @var{wand} can furtherly be used
 ;; as a context, see `Wand:delete-wand'."
 (define-ffi-function Wand:clear-wand "ClearMagickWand" :void
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 ;; Return a cloned copy of WAND.
-(define-ffi-function Wand:copy-wand "CloneMagickWand" MagickWand
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:copy-wand "CloneMagickWand" Wand-WandType
+  (Wand-WandType) libmagickwand)
 
 ;; Gets the image at the current image index.
-(define-ffi-function Wand:get-image "MagickGetImage" MagickWand
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:get-image "MagickGetImage" Wand-WandType
+  (Wand-WandType) libmagickwand)
 
 ;; Extracts a region of the image and returns it as a a new wand.
-(define-ffi-function Wand:image-region "MagickGetImageRegion" MagickWand
+(define-ffi-function Wand:image-region "MagickGetImageRegion" Wand-WandType
   ;; wand dx dy x y
-  (MagickWand :ulong :ulong :ulong :ulong) libmagickwand)
+  (Wand-WandType :ulong :ulong :ulong :ulong) libmagickwand)
 
 ;; Delete the WAND.
 ;; This frees all resources associated with the WAND.
 ;; WARNING: Do not use WAND after calling this function!
 (define-ffi-function Wand:destroy-wand "DestroyMagickWand" :void
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 (defun Wand:delete-wand (wand)
   ;; Workaround some ugly bug, causing
@@ -173,8 +173,8 @@
   (Wand:destroy-wand wand))
 
 ;; Return non-nil if WAND is a magick wand, nil otherwise.
-(define-ffi-function Wand:wandp "IsMagickWand" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:wandp "IsMagickWand" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 (defmacro Wand-with-wand (wand &rest forms)
   "With allocated WAND do FORMS."
@@ -188,7 +188,7 @@
 ;; attributes to the file. Attributes include the image width, height,
 ;; size, and others.
 (define-ffi-function Wand:MagickIdentifyImage "MagickIdentifyImage" :pointer
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 (defun Wand:identify-image (wand)
   "Return info about the image stored in WAND."
@@ -199,17 +199,17 @@
         (Wand:RelinquishMemory ii)))))
 
 (define-ffi-function Wand:MagickGetException "MagickGetException" :pointer
-  (MagickWand :pointer) libmagickwand)
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:exception (wand)
   "Return reason of any error that occurs when using API."
-  (with-ffi-temporary (c-ext MagickExceptionType)
+  (with-ffi-temporary (c-ext Wand-ExceptionType)
     (ffi-get-c-string (Wand:MagickGetException wand c-ext))))
 
 ;;}}}
 
-(define-ffi-function Wand:MagickReadImage "MagickReadImage" MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+(define-ffi-function Wand:MagickReadImage "MagickReadImage" Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:read-image (wand file)
   "Read FILE and associate it with WAND.
@@ -219,7 +219,7 @@ Return non-nil if file has been loaded successfully."
     (unless (file-readable-p fname)
       (error "File unreadable %s" fname))
     (when (zerop (Wand:wandp wand))
-      (wrong-type-argument 'Wand:wandp wand))
+      (error "Non-wand arg: %S" wand))
 
     (with-ffi-string (fncstr fname)
       (when (zerop (Wand:MagickReadImage wand fncstr))
@@ -231,8 +231,8 @@ Return non-nil if file has been loaded successfully."
   (with-ffi-string (dtcstr data)
     (Wand:MagickReadImage wand dtcstr)))
 
-(define-ffi-function Wand:MagickWriteImage "MagickWriteImage" MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+(define-ffi-function Wand:MagickWriteImage "MagickWriteImage" Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:write-image (wand file)
   "Write the image associated with WAND to FILE."
@@ -241,13 +241,13 @@ Return non-nil if file has been loaded successfully."
     (unless (file-writable-p fname)
       (error "File unwritable %s" fname))
     (when (zerop (Wand:wandp wand))
-      (wrong-type-argument 'Wand:wandp wand))
+      (error "Non-wand arg: %S" wand))
 
     (with-ffi-string (fncstr fname)
       (Wand:MagickWriteImage wand fncstr))))
 
 (define-ffi-function Wand:GetImageBlob "MagickGetImageBlob" :pointer
-  (MagickWand :pointer) libmagickwand)
+  (Wand-WandType :pointer) libmagickwand)
 
 ;; Use `Wand:RelinquishMemory' when done with blob
 (defun Wand:image-blob (wand)
@@ -260,8 +260,8 @@ Use \(setf \(Wand:image-format w\) FMT\) to set format."
 
 ;; MagickResetImagePage() resets the Wand page canvas and position.
 (define-ffi-function Wand:MagickResetImagePage "MagickResetImagePage"
-  MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:reset-image-page (wand &optional geometry)
   "Reset the WAND page canvas and position to GEOMETRY.
@@ -282,10 +282,10 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
                        "min" "output" "scene" "skewness"
                        "standard-deviation" "standard_deviation"
                        "unique" "zero"))
-    (error "Unsupported magick property" prop))
+    (error "Unsupported magick property: %s" prop))
   (with-ffi-string (cprop prop)
     (let ((ret (Wand:GetMagickProperty
-                (ffi-null-pointer) (MagickWand-private-images wand)
+                (ffi-null-pointer) (Wand-PrivateType-images wand)
                 cprop)))
       (unless (ffi-pointer-null-p ret)
         (ffi-get-c-string ret)))))
@@ -311,7 +311,7 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
       (Wand:RelinquishMemory strs))))
 
 (define-ffi-function Wand:MagickGetImageProperties "MagickGetImageProperties" :pointer
-  (MagickWand :pointer :pointer) libmagickwand)
+  (Wand-WandType :pointer :pointer) libmagickwand)
 
 (defun Wand:image-properties (w pattern)
   "Return list of image properties that match PATTERN."
@@ -321,15 +321,15 @@ PROP can be one of: `base', `channels', `colorspace', `depth',
         (Wand-fetch-relinquish-strings props (ffi--mem-ref clen :ulong))))))
 
 (define-ffi-function Wand:MagickGetImageProperty "MagickGetImageProperty" :pointer
-  (MagickWand :pointer) libmagickwand)
+  (Wand-WandType :pointer) libmagickwand)
 
 (define-ffi-function Wand:MagickSetImageProperty "MagickSetImageProperty"
-  MagickBooleanType
-  (MagickWand :pointer :pointer) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :pointer :pointer) libmagickwand)
 
 (define-ffi-function Wand:MagickDeleteImageProperty "MagickDeleteImageProperty"
-  MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:image-property (w property)
   "Return value for PROPERTY.
@@ -395,10 +395,10 @@ Use \(setf \(Wand:image-property w prop\) VAL\) to set property."
 
 ;;{{{  `-- Image size/orientation/other stuff
 
-(define-ffi-function Wand:MagickGetSize "MagickGetSize" MagickBooleanType
-  (MagickWand :pointer :pointer) libmagickwand)
-(define-ffi-function Wand:MagickSetSize "MagickSetSize" MagickBooleanType
-  (MagickWand :ulong :ulong) libmagickwand)
+(define-ffi-function Wand:MagickGetSize "MagickGetSize" Wand-BooleanType
+  (Wand-WandType :pointer :pointer) libmagickwand)
+(define-ffi-function Wand:MagickSetSize "MagickSetSize" Wand-BooleanType
+  (Wand-WandType :ulong :ulong) libmagickwand)
 
 (defun Wand:image-size (wand)
   "Return size of the image, associated with WAND."
@@ -409,17 +409,17 @@ Use \(setf \(Wand:image-property w prop\) VAL\) to set property."
   `(Wand:MagickSetSize ,wand (car ,size) (cdr ,size)))
 
 (define-ffi-function Wand:image-height "MagickGetImageHeight" :ulong
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 (define-ffi-function Wand:image-width "MagickGetImageWidth" :ulong
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:GetImageOrientation "MagickGetImageOrientation"
-  MagickOrientationType
-  (MagickWand) libmagickwand)
+  Wand-OrientationType
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:SetImageOrientation "MagickSetImageOrientation"
-  MagickBooleanType
-  (MagickWand MagickOrientationType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-OrientationType) libmagickwand)
 
 (defun Wand:image-orientation (w)
   "Return orientation for the image hold by W.
@@ -429,18 +429,18 @@ Use \(setf \(Wand:image-orientation w\) orient\) to set new one."
 (defsetf Wand:image-orientation (w) (orient)
   `(Wand:SetImageOrientation ,w ,orient))
 
-(defconst MagickEndianType :int)
-(defconst MagickEndianUndefined 0)
-(defconst MagickEndianLSB 1)
-(defconst MagickEndianMSB 2)
+(defconst Wand-EndianType :int)
+(defconst Wand-EndianUndefined 0)
+(defconst Wand-EndianLSB 1)
+(defconst Wand-EndianMSB 2)
 
 (define-ffi-function Wand:GetImageEndian "MagickGetImageEndian"
-  MagickEndianType
-  (MagickWand) libmagickwand)
+  Wand-EndianType
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:SetImageEndian "MagickSetImageEndian"
-  MagickBooleanType
-  (MagickWand MagickEndianType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-EndianType) libmagickwand)
 
 (defun Wand:image-endian (w)
   "Return endian for the image hold by W.
@@ -450,8 +450,8 @@ Use \(setf \(Wand:image-endian w\) endian\) to set new one."
 (defsetf Wand:image-endian (w) (endian)
   `(Wand:SetImageEndian ,w ,endian))
 
-(defconst MagickColorspaceType :int)
-(defconst MagickColorspaceTypes
+(defconst Wand-ColorspaceType :int)
+(defconst Wand-ColorspaceTypes
   '(("RGB" . 1) ("GRAY" . 2) ("Transparent" . 3) ("OHTA" . 4) ("Lab" . 5)
     ("XYZ" . 6) ("YCbCr" . 7) ("YCC" . 8) ("YIQ" . 9) ("YPbPr" . 10)
     ("YUV" . 11) ("CMYK" . 12) ("sRGB" . 13) ("HSB" . 14) ("HSL" . 15)
@@ -459,17 +459,17 @@ Use \(setf \(Wand:image-endian w\) endian\) to set new one."
     ("Rec709YCbCr" . 20) ("Log" . 21) ("CMY" . 22)))
 
 (define-ffi-function Wand:SetImageColorspace "MagickTransformImageColorspace"
-  MagickBooleanType
-  (MagickWand MagickColorspaceType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-ColorspaceType) libmagickwand)
 
 ;;}}}
 
 ;;{{{  `-- Image format operations
 
 (define-ffi-function Wand:MagicGetFormat "MagickGetFormat" :pointer
-  (MagickWand) libmagickwand)
-(define-ffi-function Wand:MagickSetFormat "MagickSetFormat" MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+  (Wand-WandType) libmagickwand)
+(define-ffi-function Wand:MagickSetFormat "MagickSetFormat" Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:wand-format (w)
   (let ((ret (Wand:MagicGetFormat w)))
@@ -482,10 +482,10 @@ Use \(setf \(Wand:image-endian w\) endian\) to set new one."
      (Wand:MagickSetFormat ,w ,nfmtsym))))
 
 (define-ffi-function Wand:GetImageFormat "MagickGetImageFormat" :pointer
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
-(define-ffi-function Wand:SetImageFormat "MagickSetImageFormat" MagickBooleanType
-  (MagickWand :pointer) libmagickwand)
+(define-ffi-function Wand:SetImageFormat "MagickSetImageFormat" Wand-BooleanType
+  (Wand-WandType :pointer) libmagickwand)
 
 (defun Wand:image-format (w)
   "Return format for the image hold by W.
@@ -504,7 +504,7 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   (:pointer :pointer) libmagickwand)
 
 (defun Wand:get-magick-info (fmt)
-  (with-ffi-temporary (c-mexc MagickExceptionInfo)
+  (with-ffi-temporary (c-mexc Wand-ExceptionInfoType)
     (with-ffi-string (c-fmt fmt)
       (Wand:GetMagickInfo c-fmt c-mexc))))
 
@@ -517,49 +517,49 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 ;;{{{  `-- Images list operations
 
 (define-ffi-function Wand:images-num "MagickGetNumberImages" :ulong
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
-(define-ffi-function Wand:HasNextImage "MagickHasNextImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:HasNextImage "MagickHasNextImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 (defsubst Wand:has-next-image (w)
   (= (Wand:HasNextImage w) 1))
 
-(define-ffi-function Wand:next-image "MagickNextImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:next-image "MagickNextImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
-(define-ffi-function Wand:has-prev-image "MagickHasPreviousImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:has-prev-image "MagickHasPreviousImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
-(define-ffi-function Wand:prev-image "MagickPreviousImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:prev-image "MagickPreviousImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:iterator-index "MagickGetIteratorIndex" :long
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:MagickSetIteratorIndex "MagickSetIteratorIndex"
-  MagickBooleanType
-  (MagickWand :long) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :long) libmagickwand)
 
 (defsetf Wand:iterator-index (w) (idx)
   `(Wand:MagickSetIteratorIndex ,w ,idx))
 
 (define-ffi-function Wand:set-first-iterator "MagickSetFirstIterator" :void
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:set-last-iterator "MagickSetLastIterator" :void
-  (MagickWand) libmagickwand)
+  (Wand-WandType) libmagickwand)
 
 ;;}}}
 
 ;;{{{  `-- PixelWand operations
 
-(defvar PixelWand :pointer)
+(defvar Wand-PixelType :pointer)
 
-(define-ffi-function Wand:NewPixelWand "NewPixelWand" PixelWand
+(define-ffi-function Wand:NewPixelWand "NewPixelWand" Wand-PixelType
   nil libmagickwand)
-(define-ffi-function Wand:DestroyPixelWand "DestroyPixelWand" PixelWand
-  (PixelWand) libmagickwand)
+(define-ffi-function Wand:DestroyPixelWand "DestroyPixelWand" Wand-PixelType
+  (Wand-PixelType) libmagickwand)
 
 (defmacro Wand-with-pixel-wand (pw &rest forms)
   "With allocated pixel wand PW do FORMS."
@@ -570,18 +570,18 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 (put 'Wand-with-pixel-wand 'lisp-indent-function 'defun)
 
 (define-ffi-function Wand:pixel-red "PixelGetRed" :double
-  (PixelWand) libmagickwand)
+  (Wand-PixelType) libmagickwand)
 (define-ffi-function Wand:pixel-green "PixelGetGreen" :double
-  (PixelWand) libmagickwand)
+  (Wand-PixelType) libmagickwand)
 (define-ffi-function Wand:pixel-blue "PixelGetBlue" :double
-  (PixelWand) libmagickwand)
+  (Wand-PixelType) libmagickwand)
 
 (define-ffi-function Wand:PixelSetRed "PixelSetRed" :void
-  (PixelWand :double) libmagickwand)
+  (Wand-PixelType :double) libmagickwand)
 (define-ffi-function Wand:PixelSetGreen "PixelSetGreen" :void
-  (PixelWand :double) libmagickwand)
+  (Wand-PixelType :double) libmagickwand)
 (define-ffi-function Wand:PixelSetBlue "PixelSetBlue" :void
-  (PixelWand :double) libmagickwand)
+  (Wand-PixelType :double) libmagickwand)
 
 (defsetf Wand:pixel-red (pw) (r)
   `(Wand:PixelSetRed ,pw ,r))
@@ -592,7 +592,7 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 
 (defun Wand:pixel-rgb-components (pw)
   "Return RGB components for pixel wand PW."
-  (mapcar #'(lambda (c) (int (* (funcall c pw) 65535.0)))
+  (mapcar #'(lambda (c) (truncate (* (funcall c pw) 65535.0)))
           '(Wand:pixel-red Wand:pixel-green Wand:pixel-blue)))
 
 (defsetf Wand:pixel-rgb-components (pw) (rgb)
@@ -604,7 +604,7 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 ;; PixelGetColorAsString() returns the color of the pixel wand as a
 ;; string.
 (define-ffi-function Wand:PixelGetColorAsString "PixelGetColorAsString" :pointer
-  (PixelWand) libmagickwand)
+  (Wand-PixelType) libmagickwand)
 
 (defun Wand:pixel-color (pw)
   (let ((pcs (Wand:PixelGetColorAsString pw)))
@@ -614,8 +614,8 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 ;; PixelSetColor() sets the color of the pixel wand with a string
 ;; (e.g. "blue", "#0000ff", "rgb(0,0,255)", "cmyk(100,100,100,10)",
 ;; etc.).
-(define-ffi-function Wand:PixelSetColor "PixelSetColor" MagickBooleanType
-  (PixelWand :pointer) libmagickwand)
+(define-ffi-function Wand:PixelSetColor "PixelSetColor" Wand-BooleanType
+  (Wand-PixelType :pointer) libmagickwand)
 
 (defsetf Wand:pixel-color (pw) (color)
   (let ((colcsym (cl-gensym)))
@@ -625,13 +625,13 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 ;; PixelGetAlpha() returns the normalized alpha color of the pixel
 ;; wand.
 (define-ffi-function Wand:pixel-alpha "PixelGetAlpha" :double
-  (PixelWand) libmagickwand)
+  (Wand-PixelType) libmagickwand)
 
 ;; PixelSetAlpha() sets the normalized alpha color of the pixel wand.
 ;; The level of transparency: 1.0 is fully opaque and 0.0 is fully
 ;; transparent.
 (define-ffi-function Wand:PixelSetAlpha "PixelSetAlpha" :void
-  (PixelWand :double) libmagickwand)
+  (Wand-PixelType :double) libmagickwand)
 
 (defsetf Wand:pixel-alpha (pw) (alpha)
   `(Wand:PixelSetAlpha ,pw ,alpha))
@@ -640,34 +640,36 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 
 ;;{{{  `-- DrawingWand operations
 
-(defconst DrawingWand :pointer)
+(defconst Wand-DrawingType :pointer)
 
-(defconst WandPaintMethod :int)
-(defconst WandPaintPoint 1)
-(defconst WandPaintReplace 2)
-(defconst WandPaintFloodfill 3)
-(defconst WandPaintFillToBorder 4)
-(defconst WandPaintReset 5)
+(defconst Wand-PaintMethodType :int)
+(defmacro Wand-PaintMethod-get (kw)
+  (ecase kw
+     (:point 1)
+     (:replace 2)
+     ((:floodfill :flood-fill) 3)
+     ((:filltoborder :fill-to-border) 4)
+     (:reset 5)))
 
 ;; MagickDrawImage() renders the drawing wand on the current image.
-(define-ffi-function Wand:MagickDrawImage "MagickDrawImage" MagickBooleanType
-  (MagickWand DrawingWand) libmagickwand)
+(define-ffi-function Wand:MagickDrawImage "MagickDrawImage" Wand-BooleanType
+  (Wand-WandType Wand-DrawingType) libmagickwand)
 
 (define-ffi-function Wand:MagickAnnotateImage "MagickAnnotateImage"
-  MagickBooleanType
+  Wand-BooleanType
   ;; wand draw x y angle text
-  (MagickWand DrawingWand :double :double :double :pointer) libmagickwand)
+  (Wand-WandType Wand-DrawingType :double :double :double :pointer) libmagickwand)
 
 (define-ffi-function Wand:clear-drawing-wand "ClearDrawingWand" :void
-  (DrawingWand) libmagickwand)
+  (Wand-DrawingType) libmagickwand)
 
-(define-ffi-function Wand:copy-drawing-wand "CloneDrawingWand" DrawingWand
-  (DrawingWand) libmagickwand)
+(define-ffi-function Wand:copy-drawing-wand "CloneDrawingWand" Wand-DrawingType
+  (Wand-DrawingType) libmagickwand)
 
-(define-ffi-function Wand:delete-drawing-wand "DestroyDrawingWand" DrawingWand
-  (DrawingWand) libmagickwand)
+(define-ffi-function Wand:delete-drawing-wand "DestroyDrawingWand" Wand-DrawingType
+  (Wand-DrawingType) libmagickwand)
 
-(define-ffi-function Wand:make-drawing-wand "NewDrawingWand" DrawingWand
+(define-ffi-function Wand:make-drawing-wand "NewDrawingWand" Wand-DrawingType
   nil libmagickwand)
 
 (defmacro Wand-with-drawing-wand (dw &rest forms)
@@ -680,31 +682,31 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 
 (define-ffi-function Wand:draw-arc "DrawArc" :void
   ;; draw sx sy ex ey sd ed
-  (DrawingWand :double :double :double :double :double :double) libmagickwand)
+  (Wand-DrawingType :double :double :double :double :double :double) libmagickwand)
 
 (define-ffi-function Wand:draw-circle "DrawCircle" :void
   ;; draw ox oy px py
-  (DrawingWand :double :double :double :double) libmagickwand)
+  (Wand-DrawingType :double :double :double :double) libmagickwand)
 
 (define-ffi-function Wand:draw-rectangle "DrawRectangle" :void
   ;; draw ox oy ex ey
-  (DrawingWand :double :double :double :double) libmagickwand)
+  (Wand-DrawingType :double :double :double :double) libmagickwand)
 
 (define-ffi-function Wand:draw-round-rectangle "DrawRoundRectangle" :void
   ;; draw x1 y1 x2 y2 rx ry
-  (DrawingWand :double :double :double :double :double :double) libmagickwand)
+  (Wand-DrawingType :double :double :double :double :double :double) libmagickwand)
 
 (define-ffi-function Wand:draw-color "DrawColor" :void
   ;; draw x y paint-method
-  (DrawingWand :double :double WandPaintMethod) libmagickwand)
+  (Wand-DrawingType :double :double Wand-PaintMethodType) libmagickwand)
 
 (define-ffi-function Wand:DrawPolygon "DrawPolygon" :void
   ;; draw n-points (pointer PointInfo)
-  (DrawingWand :ulong :pointer) libmagickwand)
+  (Wand-DrawingType :ulong :pointer) libmagickwand)
 
 (define-ffi-function Wand:DrawPolyline "DrawPolyline" :void
   ;; draw n-points (pointer PointInfo)
-  (DrawingWand :ulong :pointer) libmagickwand)
+  (Wand-DrawingType :ulong :pointer) libmagickwand)
 
 (defmacro Wand-with-ffi-points (binding &rest body)
   (declare (indent defun))
@@ -728,10 +730,10 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
     (Wand:DrawPolyline dw (length points) c-pinfo)))
 
 (define-ffi-function Wand:DrawGetFillColor "DrawGetFillColor" :void
-  (DrawingWand PixelWand) libmagickwand)
+  (Wand-DrawingType Wand-PixelType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetFillColor "DrawSetFillColor" :void
-  (DrawingWand PixelWand) libmagickwand)
+  (Wand-DrawingType Wand-PixelType) libmagickwand)
 
 (defun Wand:draw-fill-color (dw)
   (let ((pw (Wand:NewPixelWand)))
@@ -742,19 +744,19 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   `(Wand:DrawSetFillColor ,w ,p))
 
 (define-ffi-function Wand:draw-fill-opacity "DrawGetFillOpacity" :double
-  (DrawingWand) libmagickwand)
+  (Wand-DrawingType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetFillOpacity "DrawSetFillOpacity" :void
-  (DrawingWand :double) libmagickwand)
+  (Wand-DrawingType :double) libmagickwand)
 
 (defsetf Wand:draw-fill-opacity (w) (fo)
   `(Wand:DrawSetFillOpacity ,w ,fo))
 
 (define-ffi-function Wand:DrawGetStrokeColor "DrawGetStrokeColor" :void
-  (DrawingWand PixelWand) libmagickwand)
+  (Wand-DrawingType Wand-PixelType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetStrokeColor "DrawSetStrokeColor" :void
-  (DrawingWand PixelWand) libmagickwand)
+  (Wand-DrawingType Wand-PixelType) libmagickwand)
 
 (defun Wand:draw-stroke-color (dw)
   (let ((pw (Wand:NewPixelWand)))
@@ -765,29 +767,29 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
   `(Wand:DrawSetStrokeColor ,w ,p))
 
 (define-ffi-function Wand:draw-stroke-width "DrawGetStrokeWidth" :double
-  (DrawingWand) libmagickwand)
+  (Wand-DrawingType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetStrokeWidth "DrawSetStrokeWidth" :void
-  (DrawingWand :double) libmagickwand)
+  (Wand-DrawingType :double) libmagickwand)
 
 (defsetf Wand:draw-stroke-width (dw) (sw)
   `(Wand:DrawSetStrokeWidth ,dw (float ,sw)))
 
 (define-ffi-function Wand:draw-stroke-opacity "DrawGetStrokeOpacity" :double
-  (DrawingWand) libmagickwand)
+  (Wand-DrawingType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetStrokeOpacity "DrawSetStrokeOpacity" :void
-  (DrawingWand :double) libmagickwand)
+  (Wand-DrawingType :double) libmagickwand)
 
 (defsetf Wand:draw-stroke-opacity (dw) (so)
   `(Wand:DrawSetStrokeOpacity ,dw ,so))
 
 (define-ffi-function Wand:draw-stroke-antialias "DrawGetStrokeAntialias"
-  MagickBooleanType
-  (DrawingWand) libmagickwand)
+  Wand-BooleanType
+  (Wand-DrawingType) libmagickwand)
 
 (define-ffi-function Wand:DrawSetStrokeAntialias "DrawSetStrokeAntialias" :void
-  (DrawingWand MagickBooleanType) libmagickwand)
+  (Wand-DrawingType Wand-BooleanType) libmagickwand)
 
 (defsetf Wand:draw-stroke-antialias (dw) (aa)
   `(Wand:DrawSetStrokeAntialias ,dw (if ,aa 1 0)))
@@ -796,20 +798,20 @@ Use \(setf \(Wand:image-format w\) FMT\) to set new one."
 
 ;;{{{  `-- Image pixels operations
 
-(defvar MagickStorageType :int)
-(defmacro MagickStorageType-get (kw)
-  (cond ((eq kw :undefined-pixel) 0)
-        ((eq kw :char-pixel) 1)
-        (t `(raise "Unknown MagickStorageType: %s" ,kw))))
+(defvar Wand-StorageType :int)
+(defmacro Wand-StorageType-get (kw)
+  (ecase kw
+    (:undefined-pixel 0)
+    (:char-pixel 1)))
 
-(define-ffi-function Wand:MagickExportImagePixels "MagickExportImagePixels" MagickBooleanType
-  (MagickWand
+(define-ffi-function Wand:MagickExportImagePixels "MagickExportImagePixels" Wand-BooleanType
+  (Wand-WandType
    :long                                ;from-width
    :long                                ;from-height
    :ulong                               ;delta-width
    :ulong                               ;delta-height
    :pointer                             ;map (c-string)
-   MagickStorageType
+   Wand-StorageType
    :pointer)                            ;target
   libmagickwand)
 
@@ -830,7 +832,7 @@ fetch data from."
     (with-ffi-string (mapncstr (car mapn-tsz))
       (Wand:MagickExportImagePixels
        wand from-width from-height delta-width delta-height
-       mapncstr (MagickStorageType-get :char-pixel) target)
+       mapncstr (Wand-StorageType-get :char-pixel) target)
       (cons rsize target))))
 
 (defun Wand:get-image-pixels (wand)
@@ -845,7 +847,7 @@ Return list of lists of N int elements representing RBG(A) values."
                collect (ffi-aref (cdr ss) :uchar i)))
         (rls nil))
     (while cls
-      (push (subseq cls 0 (or n 3)) rls)
+      (push (cl-subseq cls 0 (or n 3)) rls)
       (setq cls (nthcdr (or n 3) cls)))
     (nreverse rls)))
 
@@ -861,11 +863,36 @@ Return list of lists of N int elements representing RBG(A) values."
   "Return WAND's RGB pixel at X, Y."
   (car (Wand:get-image-rgb-pixels wand x y 1 1)))
 
+;; MagickConstituteImage() adds an image to the wand comprised of the
+;; pixel data you supply. The pixel data must be in scanline order
+;; top-to-bottom. The data can be char, short int, int, float, or
+;; double. Float and double require the pixels to be normalized
+;; [0..1], otherwise [0..Max], where Max is the maximum value the type
+;; can accomodate (e.g. 255 for char). For example, to create a
+;; 640x480 image from unsigned red-green-blue character data, use
+(define-ffi-function Wand:MagickConstituteImage "MagickConstituteImage"
+  Wand-BooleanType
+  ;; width height map(string) storage-type pixels
+  (Wand-WandType :ulong :ulong :pointer Wand-StorageType :pointer)
+  libmagickwand)
+
+(defun Wand:constitute-image (wand w h map pxl-type pixels)
+  (let ((mapn-tsz (ecase pxl-type
+                    (rgb (cons "RGB" 3))
+                    (rgba (cons "RGBA" 4))
+                    (bgr (cons "BGR" 3))
+                    (bgra (cons "BGRA" 4))
+                    (bgrp (cons "BGRP" 4)))))
+    (with-ffi-string (c-map (car mapn-tsz))
+      (with-ffi-temporary (c-pxls (ffi-allocate (* w h (cdr mapn-tsz))))
+        (Wand:MagickConstituteImage
+         wand w h c-map (Wand-StorageType-get :char-pixel) c-pxls)))))
+
 ;;}}}
 ;;{{{  `-- Image modification functions
 
-(defvar MagickFilterType :int)
-(defvar MagickFilterTypes
+(defvar Wand-FilterType :int)
+(defvar Wand-FilterTypes
   '(("point" . 1) ("box" . 2) ("triangle" . 3) ("hermite" . 4)
     ("hanning" . 5) ("hamming" . 6) ("blackman" . 7) ("gaussian" . 8)
     ("quadratic" . 9) ("cubic" . 10) ("catrom" . 11) ("mitchell" . 12)
@@ -875,8 +902,8 @@ Return list of lists of N int elements representing RBG(A) values."
     ("lanczos2sharp" . 25) ("robidoux" . 26) ("robidouxsharp" . 27)
     ("cosine" . 28) ("spline" . 29) ("lanczosradius" . 30) ("sentinel" . 31)))
 
-(defvar WandCompositeOperator :int)
-(defconst WandCompositeOperators
+(defvar Wand-CompositeOperatorType :int)
+(defconst Wand-CompositeOperators
   '(("no" . 1) ("add" . 2) ("atop" . 3) ("blend" . 4)
     ("bumpmap" . 5) ("change-mask" . 6) ("clear" . 7)
     ("color-burn" . 8) ("color-dodge" . 9) ("colorize" . 10)
@@ -895,13 +922,13 @@ Return list of lists of N int elements representing RBG(A) values."
     ("threshold" . 53) ("xor" . 54) ("divide" . 55)
     ))
 
-(defvar MagickNoiseType :int)
-(defconst MagickNoiseTypes
+(defvar Wand-NoiseType :int)
+(defconst Wand-NoiseTypes
   '(("uniform" . 1) ("guassian" . 2) ("mult-gaussian" . 3)
     ("impulse" . 4) ("laplacian" . 5) ("poisson" . 6) ("random" . 7)))
 
-(defvar MagickPreviewType :int)
-(defconst MagickPreviewTypes
+(defvar Wand-PreviewType :int)
+(defconst Wand-PreviewTypes
   '(("rotate" . 1) ("shear" . 2) ("roll" . 32)
     ("hue" . 4) ("saturation" . 5) ("brightness" . 6)
     ("gamma" . 7) ("spiff" . 8) ("dull" . 9) ("grayscale" . 10)
@@ -913,43 +940,43 @@ Return list of lists of N int elements representing RBG(A) values."
     ("wave" . 26) ("oilpaint" . 27) ("charcoal-drawing" . 28)
     ("jpeg" . 29)))
 
-(define-ffi-function Wand:RotateImage "MagickRotateImage" MagickBooleanType
-  (MagickWand PixelWand :double) libmagickwand)
+(define-ffi-function Wand:RotateImage "MagickRotateImage" Wand-BooleanType
+  (Wand-WandType Wand-PixelType :double) libmagickwand)
 
 ;;Scale the image in WAND to the dimensions WIDTHxHEIGHT.
-(define-ffi-function Wand:scale-image "MagickScaleImage" MagickBooleanType
-  (MagickWand :ulong :ulong) libmagickwand)
+(define-ffi-function Wand:scale-image "MagickScaleImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong) libmagickwand)
 
 ;; Sample the image
-(define-ffi-function Wand:sample-image "MagickSampleImage" MagickBooleanType
-  (MagickWand :ulong :ulong) libmagickwand)
+(define-ffi-function Wand:sample-image "MagickSampleImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong) libmagickwand)
 
-(define-ffi-function Wand:resize-image "MagickResizeImage" MagickBooleanType
-  (MagickWand :ulong :ulong MagickFilterType
+(define-ffi-function Wand:resize-image "MagickResizeImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong Wand-FilterType
               :double                   ;blur
               )
   libmagickwand)
 
 (ignore-errors
   (define-ffi-function Wand:liquid-rescale "MagickLiquidRescaleImage"
-    MagickBooleanType
-    (MagickWand :ulong :ulong
+    Wand-BooleanType
+    (Wand-WandType :ulong :ulong
                 :double                 ;delta-x
                 :double                 ;rigidity
                 )
     libmagickwand))
 
-(define-ffi-function Wand:flip-image "MagickFlipImage" MagickBooleanType
-  (MagickWand) libmagickwand)
-(define-ffi-function Wand:flop-image "MagickFlopImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:flip-image "MagickFlipImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
+(define-ffi-function Wand:flop-image "MagickFlopImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 (define-ffi-function Wand:transpose-image "MagickTransposeImage"
-  MagickBooleanType
-  (MagickWand) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 (define-ffi-function Wand:transverse-image "MagickTransverseImage"
-  MagickBooleanType
-  (MagickWand) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 ;; MagickWaveImage() creates a "ripple" effect in the image by
 ;; shifting the pixels vertically along a sine wave whose amplitude
@@ -958,16 +985,16 @@ Return list of lists of N int elements representing RBG(A) values."
 ;; waves are.
 ;; The WAVELENGTH argument is a float and defines how often the
 ;; waves occur.
-(define-ffi-function Wand:wave-image "MagickWaveImage" MagickBooleanType
-  (MagickWand :double :double) libmagickwand)
+(define-ffi-function Wand:wave-image "MagickWaveImage" Wand-BooleanType
+  (Wand-WandType :double :double) libmagickwand)
 
 ;; Swirl the image associated with WAND by DEGREES.
-(define-ffi-function Wand:swirl-image "MagickSwirlImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:swirl-image "MagickSwirlImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 (define-ffi-function Wand:MagickPosterizeImage "MagickPosterizeImage"
-  MagickBooleanType
-  (MagickWand :ulong MagickBooleanType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :ulong Wand-BooleanType) libmagickwand)
 (defun Wand:posterize-image (wand levels &optional ditherp)
   "Posterize the image associated with WAND.
 that is quantise the range of used colours to at most LEVELS.
@@ -977,9 +1004,9 @@ effect to wipe hard contrasts."
 
 ;; Tweak the image associated with WAND.
 (define-ffi-function Wand:MagickModulateImage "MagickModulateImage"
-  MagickBooleanType
+  Wand-BooleanType
   ;; wand brightness saturation hue
-  (MagickWand :double :double :double) libmagickwand)
+  (Wand-WandType :double :double :double) libmagickwand)
 
 (cl-defun Wand:modulate-image (wand &key (brightness 100.0)
                                     (saturation 100.0)
@@ -987,17 +1014,17 @@ effect to wipe hard contrasts."
   (Wand:MagickModulateImage wand brightness saturation hue))
 
 ;; Solarise the image associated with WAND.
-(define-ffi-function Wand:solarize-image "MagickSolarizeImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:solarize-image "MagickSolarizeImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; Perform gamma correction on the image associated with WAND.
 ;; The argument LEVEL is a positive float, a value of 1.00 (read 100%)
 ;; is a no-op.
-(define-ffi-function Wand:gamma-image "MagickGammaImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:gamma-image "MagickGammaImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
-(define-ffi-function Wand:MagickRaiseImage "MagickRaiseImage" MagickBooleanType
-  (MagickWand :ulong :ulong :long :long MagickBooleanType) libmagickwand)
+(define-ffi-function Wand:MagickRaiseImage "MagickRaiseImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong :long :long Wand-BooleanType) libmagickwand)
 
 (defun Wand:raise-image (wand &optional raise x y)
   "Raise image."
@@ -1005,141 +1032,143 @@ effect to wipe hard contrasts."
    wand (Wand:image-width wand) (Wand:image-height wand)
    (or x 10) (or y 10) (if raise 1 0)))
 
-(define-ffi-function Wand:spread-image "MagickSpreadImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:spread-image "MagickSpreadImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; Blur the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
 ;; The SIGMA argument is a float and defines a derivation.
 (define-ffi-function Wand:gaussian-blur-image "MagickGaussianBlurImage"
-  MagickBooleanType
-  (MagickWand :double :double) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :double :double) libmagickwand)
 
 ;; Blur the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
 ;; The SIGMA argument is a float and defines a derivation.
 ;; The ANGLE argument is a float and measured in degrees.
 (define-ffi-function Wand:motion-blur-image "MagickMotionBlurImage"
-  MagickBooleanType
+  Wand-BooleanType
   ;; wand radius sigma angle
-  (MagickWand :double :double :double) libmagickwand)
+  (Wand-WandType :double :double :double) libmagickwand)
 
 ;; Blur the image associated with WAND.
 ;; The ANGLE argument is a float and measured in degrees.
 (define-ffi-function Wand:radial-blur-image "MagickRadialBlurImage"
-  MagickBooleanType
-  (MagickWand :double) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; Sharpen the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
 ;; The SIGMA argument is a float and defines a derivation.
-(define-ffi-function Wand:sharpen-image "MagickSharpenImage" MagickBooleanType
-  (MagickWand :double :double) libmagickwand)
+(define-ffi-function Wand:sharpen-image "MagickSharpenImage" Wand-BooleanType
+  (Wand-WandType :double :double) libmagickwand)
 
 ;; Simulates an image shadow
 (define-ffi-function Wand:shadow-image "MagickShadowImage"
-  MagickBooleanType
+  Wand-BooleanType
   ;; wand opacity(%) sigma x-offset y-offset
-  (MagickWand :double :double :long :long) libmagickwand)
+  (Wand-WandType :double :double :long :long) libmagickwand)
 
 ;; MagickTrimImage() remove edges that are the background color from
 ;; the image.
-(define-ffi-function Wand:trim-image "MagickTrimImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:trim-image "MagickTrimImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; Preview operations
-(define-ffi-function Wand:preview-images "MagickPreviewImages" MagickWand
-  (MagickWand MagickPreviewType) libmagickwand)
+(define-ffi-function Wand:preview-images "MagickPreviewImages" Wand-WandType
+  (Wand-WandType Wand-PreviewType) libmagickwand)
 
 ;; Takes all images from the current image pointer to the end of the
 ;; image list and smushs them to each other top-to-bottom if the stack
 ;; parameter is true, otherwise left-to-right
-(define-ffi-function Wand:smush-images "MagickSmushImages" MagickWand
+(define-ffi-function Wand:smush-images "MagickSmushImages" Wand-WandType
   ;; wand stack offset
-  (MagickWand MagickBooleanType :ssize_t) libmagickwand)
+  (Wand-WandType Wand-BooleanType :ssize_t) libmagickwand)
 
-(define-ffi-function Wand:MagickNegateImage "MagickNegateImage" MagickBooleanType
-  (MagickWand MagickBooleanType) libmagickwand)
+(define-ffi-function Wand:MagickNegateImage "MagickNegateImage" Wand-BooleanType
+  (Wand-WandType Wand-BooleanType) libmagickwand)
 (defun Wand:negate-image (wand &optional greyp)
   "Perform negation on the image associated with WAND."
   (Wand:MagickNegateImage wand (if greyp 1 0)))
 
 ;; Crop to the rectangle spanned at X and Y by width DX and
 ;; height DY in the image associated with WAND."
-(define-ffi-function Wand:crop-image "MagickCropImage" MagickBooleanType
-  (MagickWand :ulong :ulong :ulong :ulong) libmagickwand)
+(define-ffi-function Wand:crop-image "MagickCropImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong :ulong :ulong) libmagickwand)
 
 ;; MagickChopImage() removes a region of an image and collapses the
 ;; image to occupy the removed portion
-(define-ffi-function Wand:chop-image "MagickChopImage" MagickBooleanType
-  (MagickWand :ulong :ulong :long :long) libmagickwand)
+(define-ffi-function Wand:chop-image "MagickChopImage" Wand-BooleanType
+  (Wand-WandType :ulong :ulong :long :long) libmagickwand)
 
 ;; Reduce the noise in the image associated with WAND by RADIUS.
 (define-ffi-function Wand:reduce-noise-image "MagickReduceNoiseImage"
-  MagickBooleanType
-  (MagickWand :double) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; MagickAddNoiseImage() adds random noise to the image.
 (define-ffi-function Wand:add-noise-image "MagickAddNoiseImage"
-  MagickBooleanType
-  (MagickWand MagickNoiseType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-NoiseType) libmagickwand)
 
 ;; Composite one image COMPOSITE-WAND onto another WAND at the
 ;; specified offset X, Y, using composite operator COMPOSE.
-(define-ffi-function Wand:image-composite "MagickCompositeImage" MagickBooleanType
-  (MagickWand MagickWand WandCompositeOperator :long :long) libmagickwand)
+(define-ffi-function Wand:image-composite "MagickCompositeImage"
+  Wand-BooleanType
+  (Wand-WandType Wand-WandType Wand-CompositeOperatorType :long :long)
+  libmagickwand)
 
 ;;; image improvements and basic image properties
 (define-ffi-function Wand:MagickContrastImage "MagickContrastImage"
-  MagickBooleanType
-  (MagickWand MagickBooleanType) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-BooleanType) libmagickwand)
 
 ;; Non-linear contrast changer
 (define-ffi-function Wand:MagickSigmoidalContrastImage "MagickSigmoidalContrastImage"
-  MagickBooleanType
-  (MagickWand MagickBooleanType :double :double) libmagickwand)
+  Wand-BooleanType
+  (Wand-WandType Wand-BooleanType :double :double) libmagickwand)
 
 ;; Reduce the speckle noise in the image associated with WAND.
-(define-ffi-function Wand:despeckle-image "MagickDespeckleImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:despeckle-image "MagickDespeckleImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 ;; Enhance the image associated with WAND.
-(define-ffi-function Wand:enhance-image "MagickEnhanceImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:enhance-image "MagickEnhanceImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 ;; Equalise the image associated with WAND.
-(define-ffi-function Wand:equalize-image "MagickEqualizeImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:equalize-image "MagickEqualizeImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 ;; Normalise the image associated with WAND.
-(define-ffi-function Wand:normalize-image "MagickNormalizeImage" MagickBooleanType
-  (MagickWand) libmagickwand)
+(define-ffi-function Wand:normalize-image "MagickNormalizeImage" Wand-BooleanType
+  (Wand-WandType) libmagickwand)
 
 ;; Simulate a charcoal drawing of the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
 ;; The SIGMA argument is a float and defines a derivation.
-(define-ffi-function Wand:charcoal-image "MagickCharcoalImage" MagickBooleanType
-  (MagickWand :double :double) libmagickwand)
+(define-ffi-function Wand:charcoal-image "MagickCharcoalImage" Wand-BooleanType
+  (Wand-WandType :double :double) libmagickwand)
 
 ;; Simulate oil-painting of image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
-(define-ffi-function Wand:oil-paint-image "MagickOilPaintImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:oil-paint-image "MagickOilPaintImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; MagickSepiaToneImage() applies a special effect to the image,
 ;; similar to the effect achieved in a photo darkroom by sepia
 ;; toning. Threshold ranges from 0 to QuantumRange and is a measure of
 ;; the extent of the sepia toning. A threshold of 80 is a good
 ;; starting point for a reasonable tone.
-(define-ffi-function Wand:sepia-tone-image "MagickSepiaToneImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:sepia-tone-image "MagickSepiaToneImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; MagickImplodeImage() creates a new image that is a copy of an
 ;; existing one with the image pixels "implode" by the specified
 ;; percentage. It allocates the memory necessary for the new Image
 ;; structure and returns a pointer to the new image.
-(define-ffi-function Wand:implode-image "MagickImplodeImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:implode-image "MagickImplodeImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; MagickShadeImage() shines a distant light on an image to create a
 ;; three-dimensional effect. You control the positioning of the light
@@ -1148,34 +1177,34 @@ effect to wipe hard contrasts."
 ;;
 ;; GRAY - A value other than zero shades the intensity of each pixel.
 ;; AZIMUTH, ELEVATION - Define the light source direction.
-(define-ffi-function Wand:shade-image "MagickShadeImage" MagickBooleanType
-  (MagickWand MagickBooleanType :double :double) libmagickwand)
+(define-ffi-function Wand:shade-image "MagickShadeImage" Wand-BooleanType
+  (Wand-WandType Wand-BooleanType :double :double) libmagickwand)
 
 ;; MagickVignetteImage() softens the edges of the image in vignette
 ;; style.
-(define-ffi-function Wand:vignette-image "MagickVignetteImage" MagickBooleanType
+(define-ffi-function Wand:vignette-image "MagickVignetteImage" Wand-BooleanType
   ;; wand black-point white-point x y
-  (MagickWand :double :double :double :double) libmagickwand)
+  (Wand-WandType :double :double :double :double) libmagickwand)
 
 ;; MagickSketchImage() simulates a pencil sketch. We convolve the
 ;; image with a Gaussian operator of the given radius and standard
 ;; deviation (sigma). For reasonable results, radius should be larger
 ;; than sigma. Use a radius of 0 and SketchImage() selects a suitable
 ;; radius for you. Angle gives the angle of the blurring motion.
-(define-ffi-function Wand:sketch-image "MagickSketchImage" MagickBooleanType
+(define-ffi-function Wand:sketch-image "MagickSketchImage" Wand-BooleanType
   ;; wand radius sigma angle
-  (MagickWand :double :double :double) libmagickwand)
+  (Wand-WandType :double :double :double) libmagickwand)
 
 ;; Enhance the edges of the image associated with WAND.
 ;; The RADIUS argument is a float and measured in pixels.
-(define-ffi-function Wand:edge-image "MagickEdgeImage" MagickBooleanType
-  (MagickWand :double) libmagickwand)
+(define-ffi-function Wand:edge-image "MagickEdgeImage" Wand-BooleanType
+  (Wand-WandType :double) libmagickwand)
 
 ;; Emboss the image associated with WAND (a relief effect).
 ;; The RADIUS argument is a float and measured in pixels.
 ;; The SIGMA argument is a float and defines a derivation.
-(define-ffi-function Wand:emboss-image "MagickEmbossImage" MagickBooleanType
-  (MagickWand :double :double) libmagickwand)
+(define-ffi-function Wand:emboss-image "MagickEmbossImage" Wand-BooleanType
+  (Wand-WandType :double :double) libmagickwand)
 
 ;;}}}
 ;;{{{ Util image, glyph and size related functions
@@ -1241,11 +1270,12 @@ Return non-nil if fiting was performed."
 (defun Wand:correct-orientation (wand)
   "Automatically rotate WAND image according to orientation."
   (let ((angle (case (Wand:image-orientation wand)
-                 (MagickOrientationRightTop 90)
-                 (MagickOrientationBottomRight 180)
-                 (MagickOrientationLeftBottom -90))))
+                 ((Wand-Orientation-get :right-top) 90)
+                 ((Wand-Orientation-get :bottom-right) 180)
+                 ((Wand-Orientation-get :left-bottom) -90))))
     (when angle
-      (setf (Wand:image-orientation wand) MagickOrientationTopLeft)
+      (setf (Wand:image-orientation wand)
+            (Wand-Orientation-get :top-left))
       (wand--operation-apply wand nil
                              'rotate angle))))
 
@@ -1256,7 +1286,8 @@ Return non-nil if fiting was performed."
 
 (defgroup wand nil
   "Group to customize wand mode."
-  :prefix "wand-")
+  :prefix "wand-"
+  :group 'multimedia)
 
 (defcustom wand-redeye-threshold 1.6
   "*Threshold to fix red eyes."
@@ -1397,8 +1428,8 @@ your own scaler with `Wand-make-scaler'."
 
     ;; General commands
     (define-key map [mouse-3] #'wand-popup-menu)
-    (define-key map [(meta mouse-1)] #'wand-drag-image)
-    (define-key map [(control mouse-1)] #'wand-drag-image)
+    (define-key map [(meta down-mouse-1)] #'wand-drag-image)
+    (define-key map [(control down-mouse-1)] #'wand-drag-image)
     (define-key map "o" #'wand-operate)
     (define-key map "O" #'wand-global-operations-list)
     (define-key map "x" #'wand-toggle-fit)
@@ -1498,8 +1529,8 @@ your own scaler with `Wand-make-scaler'."
   "Generate menu structure for TAG commands."
   (mapcar #'(lambda (to)
               (vector (get to 'menu-name) to))
-          (remove-if-not #'(lambda (c) (get c tag))
-                         (wand--commands-by-tag 'menu-name))))
+          (cl-remove-if-not #'(lambda (c) (get c tag))
+                            (wand--commands-by-tag 'menu-name))))
 
 (defun wand-popup-menu (be)
   "Popup wand menu."
@@ -1527,7 +1558,7 @@ Deactivates region."
           (apply (wand--operation-lookup (car op)) cwand (cdr op))
 
           (Wand:image-composite
-           wand cwand (cdr (assoc "copy" WandCompositeOperators))
+           wand cwand (cdr (assoc "copy" Wand-CompositeOperators))
            (nth 2 region) (nth 3 region)))
       (Wand:delete-wand cwand))))
 
@@ -1580,7 +1611,7 @@ Deactivates region."
 
 (define-wand-operation grayscale (wand)
   (Wand:SetImageColorspace
-   wand (cdr (assoc "GRAY" MagickColorspaceTypes))))
+   wand (cdr (assoc "GRAY" Wand-ColorspaceTypes))))
 
 (define-wand-operation solarize (wand threshold)
   (Wand:solarize-image wand (float threshold)))
@@ -1619,7 +1650,7 @@ Deactivates region."
   (Wand:reduce-noise-image wand (float radius)))
 
 (define-wand-operation add-noise (wand noise-type)
-  (Wand:add-noise-image wand (cdr (assoc noise-type MagickNoiseTypes))))
+  (Wand:add-noise-image wand (cdr (assoc noise-type Wand-NoiseTypes))))
 
 (define-wand-operation spread (wand radius)
   (Wand:spread-image wand (float radius)))
@@ -1662,10 +1693,10 @@ This is NOT lossless rotation for jpeg-like formats."
 (defmacro wand-make-scaler (filter-type blur)
   "Create resize function, suitable with `Wand:fit-resize'.
 FILTER-TYPE and BLUR specifies smothing applied after resize.
-FILTER-TYPE is one of `MagickFilterTypes'
+FILTER-TYPE is one of `Wand-FilterTypes'
 BLUR is float, 0.25 for insane pixels, > 2.0 for excessively smoth."
   `(lambda (iw x y)
-     (Wand:resize-image iw x y ,(cdr (assoc filter-type MagickFilterTypes))
+     (Wand:resize-image iw x y ,(cdr (assoc filter-type Wand-FilterTypes))
                         (float ,blur))))
 
 (define-wand-operation fit-size (wand width height)
@@ -1693,7 +1724,7 @@ BLUR is float, 0.25 for insane pixels, > 2.0 for excessively smoth."
   "Preview operation PTYPE.
 Return a new wand."
   (Wand:preview-images
-   wand (cdr (assoc ptype MagickPreviewTypes))))
+   wand (cdr (assoc ptype Wand-PreviewTypes))))
 
 (define-wand-operation pattern (wand pattern op)
   (Wand-with-wand cb-wand
@@ -1701,9 +1732,74 @@ Return a new wand."
           (cons (Wand:image-width wand) (Wand:image-height wand)))
     (Wand:read-image-data cb-wand (concat "pattern:" pattern))
     (Wand:image-composite wand cb-wand
-                          (cdr (assoc op WandCompositeOperators)) 0 0)))
+                          (cdr (assoc op Wand-CompositeOperators)) 0 0)))
 
 ;; TODO: other operations
+(defun wand--redeye-fix-pixels (pixels)
+  "Simple red PIXELS fixator.
+Normalize pixel color if it is too 'red'."
+  (let* ((rchan '(0.1 0.6 0.3))
+	 (gchan '(0.0 1.0 0.0))
+	 (bchan '(0.0 0.0 1.0))
+	 (rnorm (/ 1.0 (apply #'+ rchan)))
+	 (gnorm (/ 1.0 (apply #'+ gchan)))
+	 (bnorm (/ 1.0 (apply #'+ bchan))))
+    (flet ((normalize (chan norm r g b)
+	     (min 255 (int (* norm (+ (* (first chan) r)
+				      (* (second chan) g)
+				      (* (third chan) b)))))))
+      (mapcar #'(lambda (pixel-value)
+		  (multiple-value-bind (r g b) pixel-value
+		    (if (>= r (* Wand-mode-redeye-threshold g))
+			(list (normalize rchan rnorm r g b)
+			      (normalize gchan gnorm r g b)
+			      (normalize bchan bnorm r g b))
+		      (list r g b))))
+	      pixels))))
+
+(defun wand--redeye-blur-radius (w h)
+  "Return apropriate blur radius for region of width W and height H.
+It should not be too large for large regions, and it should not be
+too small for small regions."
+  (1- (sqrt (sqrt (sqrt (sqrt (* w h)))))))
+
+;; TODO
+(define-wand-operation redeye-remove (wand region)
+  "Remove redeye in the REGION."
+  (multiple-value-bind (w h x y) region
+    (Wand-with-wand cw
+      ;; Consitute new wand with fixed red pixels
+      (Wand:constitute-image
+       cw w h 'rgb (wand--redeye-fix-pixels
+                    (Wand:get-image-rgb-pixels wand x y w h)))
+
+      ;; Limit blur effect to ellipse at the center of REGION by
+      ;; setting clip mask
+      (let ((mask (Wand:copy-wand cw)))
+	(unwind-protect
+	    (progn
+	      (Wand-with-drawing-wand dw
+		(Wand-with-pixel-wand pw
+		  (setf (Wand:pixel-color pw) "white")
+		  (setf (Wand:draw-fill-color dw) pw)
+		  (Wand:draw-color
+                   dw 0.0 0.0 (Wand-PaintMethod-get :reset)))
+		(Wand-with-pixel-wand pw
+		  (setf (Wand:pixel-color pw) "black")
+		  (setf (Wand:draw-fill-color dw) pw))
+		(Wand:draw-ellipse
+		 dw (/ w 2.0) (/ h 2.0) (/ w 2.0) (/ h 2.0) 0.0 360.0)
+		(Wand:MagickDrawImage mask dw))
+	      (setf (Wand:clip-mask cw) mask))
+	  (Wand:delete-wand mask)))
+
+      (Wand:gaussian-blur-image
+       cw 0.0 (wand--redeye-blur-radius w h))
+      (setf (Wand:clip-mask cw) nil)
+
+      ;; Finally copy blured image to WAND
+      (Wand:image-composite
+       wand cw (cdr "copy" Wand-CompositeOperators) x y))))
 
 ;;}}}
 
@@ -1746,9 +1842,11 @@ Return a new wand."
                         (Wand:images-num image-wand))
               "")
             ;; Print offset info
-            (if (and preview-wand (boundp 'off-x) (boundp 'off-y)
-                     (or (positivep off-x) (positivep off-y)))
-                (format ", Offset: +%d+%d" off-x off-y)
+            (if (and preview-wand preview-offset
+                     (> (car preview-offset) 0)
+                     (> (cdr preview-offset) 0))
+                (format ", Offset: +%d+%d"
+                        (car preview-offset) (cdr preview-offset))
               "")
             ;; Print region info
             (if preview-region
@@ -1775,7 +1873,7 @@ Return a new wand."
 
 (defun wand--color-info ()
   (declare (special pickup-color))
-  (let* ((cf (make-face (gensym "dcolor-")))
+  (let* ((cf (make-face (cl-gensym "dcolor-")))
          (place (car pickup-color))
          (color (cdr pickup-color))
          (fcol (apply #'format "#%02x%02x%02x" color))
@@ -1913,6 +2011,7 @@ Return a new wand."
   (wand--insert-preview)
   (widget-setup)
 
+  (set-buffer-modified-p nil)
   (use-local-map wand-mode-map))
 
 ;;;###autoload
@@ -1929,14 +2028,13 @@ Return a new wand."
       (unless (eq major-mode 'wand-mode)
         ;; Initialise local variables
         (kill-all-local-variables)
-        (make-variable-buffer-local 'image-wand)
-        (make-variable-buffer-local 'preview-wand)
-        (make-variable-buffer-local 'preview-region)
-        (make-variable-buffer-local 'preview-offset)
-        (make-variable-buffer-local 'last-preview-region)
-        (make-variable-buffer-local 'operations-list)
-        (make-variable-buffer-local 'undo-list)
-        (make-variable-buffer-local 'kill-buffer-hook)
+        (make-local-variable 'image-wand)
+        (make-local-variable 'preview-wand)
+        (make-local-variable 'preview-region)
+        (make-local-variable 'preview-offset)
+        (make-local-variable 'last-preview-region)
+        (make-local-variable 'operations-list)
+        (make-local-variable 'undo-list)
         (setq operations-list nil)
         (setq undo-list nil)
         (setq preview-wand nil)
@@ -1946,10 +2044,10 @@ Return a new wand."
         (use-local-map wand-mode-map)
         (setq mode-name "wand")
         (setq major-mode 'wand-mode)
-;        (setq buffer-read-only t)
         ;; Setup menubar
         (add-submenu '() wand-menu)
-        (add-hook 'kill-buffer-hook 'wand--cleanup))
+        ;; Add local kill-buffer-hook to cleanup stuff
+        (add-hook 'kill-buffer-hook 'wand--cleanup nil t))
 
       (when preview-wand
         (Wand:delete-wand preview-wand))
@@ -1962,7 +2060,7 @@ Return a new wand."
       (Wand:clear-wand image-wand)
       ;; Fix buffer-file-name in case of viewing directory
       (when (file-directory-p file)
-        (setq file (or (Wand-next-file (concat file "/.")) file)))
+        (setq file (or (wand--next-file (concat file "/.")) file)))
       (setq buffer-file-name file)
       (setq default-directory (file-name-directory file))
 
@@ -1995,12 +2093,6 @@ Bindings are:
   \\{wand-mode-map}"
   (interactive)
   (wand-display (buffer-file-name)))
-
-;;;###autoload
-(defun Wand-find-file-enable ()
-  "Enable `find-file' to use `Wand-display' for supported filetypes."
-  (push '(wand-file-supported-for-read-p . wand-display-noselect)
-        find-file-magic-files-alist))
 
 (defun wand--cleanup ()
   "Cleanup when wand buffer is killed."
@@ -2056,10 +2148,7 @@ Bindings are:
   (unless (member (downcase format) wand-formats-cant-read)
     (let ((fi (Wand:get-magick-info format)))
       (and (not (ffi-pointer-null-p fi))
-           (not (ffi-pointer-null-p (MagickInfo-decoder fi)))))))
-;; ImageMagick on linux treats any format to be RAW for some reason
-;; We can't read raw formats
-;           (not (MagickInfo->raw fi))))))
+           (not (ffi-pointer-null-p (Wand-InfoType-decoder fi)))))))
 
 (defcustom wand-formats-cant-write
   '("html")
@@ -2072,7 +2161,7 @@ Bindings are:
   (unless (member (downcase format) wand-formats-cant-write)
     (let ((fi (Wand:get-magick-info format)))
       (and (not (ffi-pointer-null-p fi))
-           (not (ffi-pointer-null-p (MagickInfo-encoder fi)))))))
+           (not (ffi-pointer-null-p (Wand-InfoType-encoder fi)))))))
 
 ;;;###autoload
 (defun wand-file-can-read-p (file)
@@ -2088,7 +2177,7 @@ Optionally you can specify MODE:
   'read-write - Formats that we can and read and write
   'any or nil - Any format (default)."
   (with-ffi-temporaries ((c-num :ulong)
-                         (c-mexc MagickExceptionInfo))
+                         (c-mexc Wand-ExceptionInfoType))
     (with-ffi-string (c-pat fmt-regexp)
       (let ((miflist (Wand:GetMagickInfoList c-pat c-num c-mexc)))
         (unless (ffi-pointer-null-p miflist)
@@ -2097,7 +2186,7 @@ Optionally you can specify MODE:
                 with fmt-name = nil
                 do (setq fmt-name
                          (ffi-get-c-string
-                          (MagickInfo-name
+                          (Wand-InfoType-name
                            (ffi-aref miflist :pointer n))))
                 if (ecase (or mode 'any)
                      (read (wand-format-can-read-p fmt-name))
@@ -2196,7 +2285,7 @@ If REVERSE-ORDER is specified, then return previous file."
            (read-number "Goto page: "))))
   ;; Internally images in chain counts from 0
   (unless (setf (Wand:iterator-index image-wand) (1- n))
-    (error "No such page" n))
+    (error "No such page: %d" n))
   (wand--operation-list-apply image-wand)
   (wand--redisplay))
 
@@ -2424,7 +2513,7 @@ Default is 1."
   "Add noise of NOISE-TYPE."
   (interactive
    (list (completing-read "Noise type [poisson]: "
-                          MagickNoiseTypes
+                          Wand-NoiseTypes
                           nil t nil nil "poisson")))
   (wand--operation-apply image-wand preview-region
                          'add-noise noise-type)
@@ -2546,7 +2635,7 @@ If prefix ARG is specified then negate by grey."
 (defun wand-preview-op (op)
   "Preview some operation OP with 8 subnails."
   (interactive (list (completing-read "Operation: "
-                        MagickPreviewTypes nil t)))
+                        Wand-PreviewTypes nil t)))
   (wand--redisplay (wand--operation-apply image-wand preview-region
                                           'preview-op op)))
 (put 'wand-preview-op 'f/x-operation t)
@@ -2674,7 +2763,6 @@ elevation is measured in pixels above the Z axis."
     (declare (special pickup-color))
     (wand--update-info)))
 
-;; TODO
 (defun wand-select-region (event)
   "Select region."
   (interactive "e")
@@ -2712,35 +2800,28 @@ elevation is measured in pixels above the Z axis."
   (setq preview-region last-preview-region)
   (wand--redisplay))
 
-;; TODO
 (defun wand-drag-image (event)
   "Drag image to view unshown part of the image."
   (interactive "e")
-  (let ((gc-cons-threshold most-positive-fixnum) ; inhibit gc
-        (sx (event-glyph-x-pixel event))
-        (sy (event-glyph-y-pixel event))
-        (pw (Wand:image-width preview-wand))
-        (ph (Wand:image-height preview-wand))
-        (mouse-down t))
-    (while mouse-down
-      (setq event (next-event event))
-      (if (or (wand--motion-event-p event)
-              (wand--mouse-release-p event))
-          (let ((off-x (+ (- sx (event-glyph-x-pixel event))
-                          (or (car preview-offset) 0)))
-                (off-y (+ (- sy (event-glyph-y-pixel event))
-                          (or (cdr preview-offset) 0))))
+  (let* ((gc-cons-threshold most-positive-fixnum) ; inhibit gc
+         (s-xy (posn-object-x-y (event-start event)))
+         (sx (car s-xy))
+         (sy (cdr s-xy))
+         (pw (Wand:image-width preview-wand))
+         (ph (Wand:image-height preview-wand)))
+    (track-mouse
+      (while (not (wand--mouse-release-p (setq event (read-event))))
+        (when (wand--motion-event-p event)
+          (let* ((m-xy (posn-object-x-y (event-start event)))
+                 (off-x (+ (- sx (car m-xy))
+                           (or (car preview-offset) 0)))
+                 (off-y (+ (- sy (cdr m-xy))
+                           (or (cdr preview-offset) 0))))
             (when (< off-x 0) (setq off-x 0))
             (when (< off-y 0) (setq off-y 0))
-            (if (wand--motion-event-p event)
-                (wand--redisplay)
-
-              ;; Button released
-              (setq mouse-down nil)
-              (setq preview-offset (cons off-x off-y))
-              (wand--redisplay)))
-
-        (dispatch-event event)))))
+            (setq preview-offset (cons off-x off-y))
+            (wand--redisplay)))))
+    ))
 
 (defun wand-crop (region)
   "Crop image to selected region."
@@ -2874,7 +2955,7 @@ LEVEL value of 1.00 (read 100%) is no-op."
   "Enable checkerboard as tile background."
   (interactive (list (completing-read "Pattern: " wand--patterns nil t)
                      (completing-read "Composite Op: "
-                                      WandCompositeOperators nil t
+                                      Wand-CompositeOperators nil t
                                       nil nil wand-pattern-composite-op)))
   (wand--operation-apply image-wand preview-region
                          'pattern pattern op)
@@ -2919,7 +3000,7 @@ A-la `list-colors-display'."
                       (insert " " (car cop) "\n"))))
           (with-output-to-temp-buffer "*Wand-Composite-Ops*"
             (set-buffer standard-output)
-            (mapc #'draw-in-out WandCompositeOperators)))))))
+            (mapc #'draw-in-out Wand-CompositeOperators)))))))
 
 (defconst wand--patterns
   '(("bricks") ("checkerboard") ("circles") ("crosshatch") ("crosshatch30")
@@ -2944,8 +3025,9 @@ A-la `list-colors-display'."
                    (Wand:read-image-data wand (concat "pattern:" pat-name))
                    (Wand:emacs-insert wand))
                 (insert " " pat-name "\n")))
-      (save-excursion
-        (set-buffer standard-output)
+      (with-current-buffer "*Wand-Patterns*"
+        ;save-excursion
+;        (set-buffer standard-output)
         (mapc #'draw-pattern (mapcar #'car wand--patterns))))))
 (put 'wand-list-patterns 'transform-operation t)
 (put 'wand-list-patterns 'menu-name "List Patterns")
